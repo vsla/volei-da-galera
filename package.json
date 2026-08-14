@@ -9,7 +9,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "simulate": "npx tsx scripts/simulate.ts"
+    "simulate": "tsx scripts/simulate.ts",
+    "smoke": "tsx scripts/smoke.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -28,11 +29,13 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/ws": "^8.18.1",
     "eslint": "^9",
     "eslint-config-next": "15.4.6",
     "tailwindcss": "^4",
     "tsx": "^4.23.12",
     "typescript": "^5",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "ws": "^8.21.3"
   }
 }

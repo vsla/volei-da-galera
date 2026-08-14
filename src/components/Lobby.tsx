@@ -210,7 +210,7 @@ export function Lobby({
         stale={stale}
       />
 
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-x-hidden overflow-y-auto">
         {match ? (
           <CourtCard
             teamA={match.teamA}
@@ -239,7 +239,7 @@ export function Lobby({
             type="button"
             onClick={() => doGenerate(true)}
             disabled={busy}
-            className="font-display text-muted hover:text-ink mx-4 mt-3 h-12 w-full text-sm tracking-widest uppercase disabled:opacity-40"
+            className="font-display text-muted hover:text-ink mx-4 mt-3 block h-12 text-sm tracking-widest uppercase disabled:opacity-40"
           >
             🎲 re-sortear esta partida
           </button>
@@ -279,7 +279,7 @@ export function Lobby({
           <button
             type="button"
             onClick={() => run(() => openVoting(state.sessionId))}
-            className="font-display text-muted hover:text-ink mx-4 h-12 w-full text-sm tracking-widest uppercase"
+            className="font-display text-muted hover:text-ink mx-4 block h-12 text-sm tracking-widest uppercase"
           >
             ⭐ encerrar a noite e abrir os destaques
           </button>
