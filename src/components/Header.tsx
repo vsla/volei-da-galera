@@ -1,13 +1,16 @@
-import { Settings } from "lucide-react";
+import { Menu, Settings } from "lucide-react";
 
 export function Header({
   dateLabel,
   isOrganizer = false,
   onOpenEdit,
+  onOpenHistory,
 }: {
   dateLabel: string;
   isOrganizer?: boolean;
   onOpenEdit?: () => void;
+  /** Histórico — aberto pra todo mundo, não só pro organizador. */
+  onOpenHistory?: () => void;
 }) {
   return (
     <header className="bg-bg/95 border-border sticky top-0 z-20 flex items-center gap-3 border-b px-4 py-3 backdrop-blur">
@@ -18,6 +21,16 @@ export function Header({
       <span className="font-display text-muted ml-auto text-base tracking-wide uppercase">
         {dateLabel}
       </span>
+      {onOpenHistory && (
+        <button
+          type="button"
+          onClick={onOpenHistory}
+          aria-label="Histórico de partidas"
+          className="text-muted hover:text-accent flex size-12 items-center justify-center"
+        >
+          <Menu className="size-5" />
+        </button>
+      )}
       {isOrganizer && (
         <button
           type="button"

@@ -381,6 +381,88 @@ export async function resetSession(sessionId: string) {
     .eq("id", sessionId);
 }
 
+// ── Histórico ────────────────────────────────────────────────
+
+export type PlayedMatch = {
+  id: string;
+  round: number;
+  winner: Team | null;
+  scoreA: number | null;
+  scoreB: number | null;
+  finishedAt: string | null;
+  teamA: SessionPlayer[];
+  teamB: SessionPlayer[];
+};
+
+/**
+ * Todas as partidas encerradas da noite, da mais recente pra mais antiga.
+ *
+ * Fica fora do `fetchState` de propósito: o estado ao vivo é lido a cada
+ * atualização e não pode crescer com a noite. Isto aqui só é buscado
+ * quando alguém abre o histórico.
+ */
+export async function fetchDayMatches(
+  sessionId: string,
+  players: SessionPlayer[],
+): Promise<PlayedMatch[]> {
+  const { data } = await supabase
+    .from("matches")
+    .select("*, match_players(*)")
+    .eq("session_id", sessionId)
+    .eq("status", "finished")
+    .order("round", { ascending: false });
+
+  const byId = new Map(players.map((p) => [p.id, p]));
+  const teamOf = (m: Row, team: Team) =>
+    ((m.match_players as Row[]) ?? [])
+      .filter((mp) => mp.team === team)
+      .map((mp) => byId.get(mp.player_id as string))
+      .filter((p): p is SessionPlayer => Boolean(p));
+
+  return ((data ?? []) as Row[]).map((m) => ({
+    id: m.id as string,
+    round: m.round as number,
+    winner: (m.winner_team as Team) ?? null,
+    scoreA: (m.score_a as number) ?? null,
+    scoreB: (m.score_b as number) ?? null,
+    finishedAt: (m.finished_at as string) ?? null,
+    teamA: teamOf(m, "A"),
+    teamB: teamOf(m, "B"),
+  }));
+}
+
+export type HighlightDay = {
+  sessionId: string;
+  date: string;
+  winners: { id: string; name: string; votes: number }[];
+};
+
+/**
+ * Os destaques de cada pelada. Passa pela função agregada do banco
+ * (`highlight_days`, migration 0008) — a tabela de votos em si continua
+ * ilegível pro cliente.
+ */
+export async function fetchHighlightDays(): Promise<HighlightDay[]> {
+  const { data } = await supabase.rpc("highlight_days", { p_limit: 30 });
+
+  const byDay = new Map<string, HighlightDay>();
+  for (const row of (data ?? []) as Row[]) {
+    const id = row.session_id as string;
+    const day = byDay.get(id) ?? {
+      sessionId: id,
+      date: row.played_on as string,
+      winners: [],
+    };
+    day.winners.push({
+      id: row.player_id as string,
+      name: row.name as string,
+      votes: Number(row.votes ?? 0),
+    });
+    byDay.set(id, day);
+  }
+  return [...byDay.values()];
+}
+
 export async function myVotes(sessionId: string, voterId: string): Promise<string[]> {
   const { data } = await supabase
     .from("highlight_votes")
