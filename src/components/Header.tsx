@@ -22,7 +22,7 @@ export function Header({
         <button
           type="button"
           onClick={onOpenEdit}
-          aria-label="Modo edição"
+          aria-label="Menu do organizador"
           /* 48px de alvo — mão com areia, no escuro */
           className="text-muted hover:text-accent -mr-2 flex size-12 items-center justify-center"
         >

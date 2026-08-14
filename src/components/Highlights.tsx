@@ -67,7 +67,7 @@ export function Highlights({
   // ── resultado ──────────────────────────────────────────────
   if (state.status === "closed") {
     return (
-      <main className="flex flex-1 flex-col px-4 pt-10 pb-6">
+      <main className="flex flex-1 flex-col overflow-y-auto overscroll-contain px-4 pt-10 pb-6">
         <h1 className="font-display text-ink mb-8 text-center text-2xl font-extrabold tracking-widest uppercase">
           🏆 Destaques de hoje
         </h1>
@@ -123,7 +123,7 @@ export function Highlights({
 
   // ── votação ────────────────────────────────────────────────
   return (
-    <main className="flex flex-1 flex-col px-4 pt-8 pb-6">
+    <main className="flex flex-1 flex-col overflow-y-auto overscroll-contain px-4 pt-8 pb-6">
       <h1 className="font-display text-ink text-center text-2xl font-extrabold tracking-widest uppercase">
         ⭐ Destaques do dia
       </h1>

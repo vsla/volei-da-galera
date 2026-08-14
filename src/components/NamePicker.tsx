@@ -25,7 +25,7 @@ export function NamePicker({
   }, [players, q]);
 
   return (
-    <main className="flex flex-1 flex-col px-4 pt-10 pb-6">
+    <main className="flex flex-1 flex-col overflow-y-auto overscroll-contain px-4 pt-10 pb-6">
       <div className="mb-8 text-center">
         <div className="text-5xl">🏐</div>
         <h1 className="font-display text-ink mt-2 text-3xl font-extrabold tracking-widest uppercase">

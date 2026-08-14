@@ -46,7 +46,14 @@ export default function RootLayout({
     <html lang="pt-BR" className={`${barlow.variable} ${inter.variable}`}>
       {/* extensões de navegador injetam atributos no body antes da hidratação */}
       <body className="font-body bg-bg text-ink" suppressHydrationWarning>
-        <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col">
+        {/*
+          h-dvh + overflow-hidden: a casca tem a altura exata da viewport e
+          NÃO rola. Quem rola é só o <main>. Com min-h-dvh havia dois
+          scrolls empilhados — o do documento e o do main — e no Safari do
+          iPhone, quando a barra de endereço recolhe, o documento ganhava
+          uns pixels a mais e sobrava aquele arrasto morto no fim da página.
+        */}
+        <div className="mx-auto flex h-dvh w-full max-w-[480px] flex-col overflow-hidden">
           {children}
         </div>
       </body>

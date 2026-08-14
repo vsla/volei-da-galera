@@ -165,13 +165,13 @@ export type GenerateOutcome =
 
 function dbFail(message: string, err?: { message?: string } | null): GenerateOutcome {
   const raw = err?.message ?? "";
-  // coluna nova: migration 0002 ainda não rodou no projeto
-  if (/champion_stays|champion_ids|column/i.test(raw)) {
+  // coluna nova: migration 0003 ainda não rodou no projeto
+  if (/champion_stays|champion_ids|rating|column/i.test(raw)) {
     return {
       ok: false,
       missing: 0,
       available: 0,
-      error: "Banco desatualizado — rode 0002_court_state.sql no SQL Editor do Supabase.",
+      error: "Banco desatualizado — rode 0003_court_state.sql no SQL Editor do Supabase.",
     };
   }
   return {
@@ -299,6 +299,50 @@ export async function openVoting(sessionId: string) {
 
 export async function closeVoting(sessionId: string) {
   await supabase.from("sessions").update({ status: "closed" }).eq("id", sessionId);
+}
+
+/**
+ * Desfaz o "encerrar a noite".
+ *
+ * Encerrar é um toque só e vai acontecer sem querer — ou a galera
+ * simplesmente decide jogar mais uma. Nada é apagado aqui: volta pra
+ * quadra quem estava na quadra, e os votos já dados continuam de pé.
+ */
+export async function reopenSession(sessionId: string, hasMatches: boolean) {
+  await supabase
+    .from("sessions")
+    .update({ status: hasMatches ? "playing" : "open" })
+    .eq("id", sessionId);
+}
+
+/**
+ * Zera a noite: partidas, check-ins, fila e votos desta data.
+ *
+ * NÃO mexe na nota — `players.rating` é acumulado de todas as noites, e
+ * desfazer os ±0.5 exigiria reprocessar cada partida apagada. A tela
+ * avisa isso antes de confirmar.
+ */
+export async function resetSession(sessionId: string) {
+  // votos primeiro: eles referenciam a sessão, não as partidas
+  await supabase.from("highlight_votes").delete().eq("session_id", sessionId);
+
+  // match_players cai por cascade
+  await supabase.from("matches").delete().eq("session_id", sessionId);
+
+  await supabase
+    .from("session_players")
+    .update({
+      games_played: 0,
+      last_played_at: null,
+      checked_in_at: null,
+      excluded: false,
+    })
+    .eq("session_id", sessionId);
+
+  await supabase
+    .from("sessions")
+    .update({ status: "open", champion_ids: [], champion_streak: 0 })
+    .eq("id", sessionId);
 }
 
 export async function myVotes(sessionId: string, voterId: string): Promise<string[]> {
@@ -466,9 +510,29 @@ export async function rejoinSession(sessionId: string, playerId: string) {
     );
 }
 
-export async function finishMatch(state: LiveState, winner: Team) {
+/**
+ * O que a tela precisa contar depois do apito.
+ *
+ * `winnerDissolved` é o caso que parece bug e não é: o time bateu o teto
+ * de vitórias, foi desfeito, e QUEM PERDEU segura a quadra.
+ */
+export type FinishSummary = {
+  winner: Team;
+  /** Quem continua na quadra — vira o time A da próxima. */
+  staying: SessionPlayer[];
+  /** Quem volta pro fim da fila. */
+  leaving: SessionPlayer[];
+  winnerDissolved: boolean;
+  /** Série de quem ficou. Zero quando ficou por ter sobrado. */
+  streak: number;
+};
+
+export async function finishMatch(
+  state: LiveState,
+  winner: Team,
+): Promise<FinishSummary | null> {
   const match = state.activeMatch;
-  if (!match) return;
+  if (!match) return null;
 
   const at = iso();
   const outcome = applyMatchResult({
@@ -515,4 +579,19 @@ export async function finishMatch(state: LiveState, winner: Team) {
       champion_streak: outcome.champion?.streak ?? 0,
     })
     .eq("id", state.sessionId);
+
+  // devolve os jogadores JÁ atualizados (nota e contagem novas), pra
+  // tela do "próxima" não mostrar número velho
+  const byId = new Map(outcome.players.map((p) => [p.id, p]));
+  const staying = (outcome.champion?.playerIds ?? [])
+    .map((id) => byId.get(id))
+    .filter((p): p is SessionPlayer => Boolean(p));
+
+  return {
+    winner,
+    staying,
+    leaving: outcome.leaving.map((p) => byId.get(p.id) ?? p),
+    winnerDissolved: outcome.winnerDissolved,
+    streak: outcome.champion?.streak ?? 0,
+  };
 }

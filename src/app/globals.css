@@ -36,11 +36,15 @@ html {
   color-scheme: dark;
   /* nunca deixar a barra de rolagem "puxar" a página na praia */
   overscroll-behavior-y: none;
+  height: 100%;
 }
 
 body {
   background: var(--color-bg);
   color: var(--color-ink);
+  /* o documento não rola — só o <main> dentro da casca (layout.tsx) */
+  height: 100%;
+  overflow: hidden;
   /* mínimo 16px em qualquer texto — mão com areia, no escuro */
   font-size: 16px;
   -webkit-font-smoothing: antialiased;
