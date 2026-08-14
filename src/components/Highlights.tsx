@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { initials, type SessionPlayer } from "@/lib/types";
 import {
   castVotes,
@@ -95,23 +96,26 @@ export function Highlights({
           Até sexta!
         </p>
 
-        <button
-          type="button"
-          onClick={() => {
-            const nomes = (result?.winners ?? []).map((p) => `⭐ ${p.name}`).join("\n");
-            navigator.clipboard?.writeText(`🏆 Destaques de hoje\n\n${nomes}`);
-          }}
-          className="font-display text-muted mt-6 h-12 text-sm tracking-widest uppercase"
+        <Link
+          href={`/destaques/${state.date}`}
+          className="font-display bg-accent text-accent-ink mt-8 flex h-14 items-center justify-center rounded-[12px] text-lg font-extrabold tracking-widest uppercase"
         >
-          📋 copiar pro zap
-        </button>
+          🖼 abrir card pra postar
+        </Link>
+
+        <Link
+          href="/destaques"
+          className="font-display text-muted mt-2 flex h-12 items-center justify-center text-sm tracking-widest uppercase"
+        >
+          ver destaques anteriores
+        </Link>
 
         <button
           type="button"
           onClick={onBack}
-          className="font-display text-muted mt-2 h-12 text-sm tracking-widest uppercase"
+          className="font-display text-muted h-12 text-sm tracking-widest uppercase"
         >
-          voltar
+          voltar pra quadra
         </button>
       </main>
     );

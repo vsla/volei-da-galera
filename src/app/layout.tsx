@@ -16,7 +16,15 @@ const inter = Inter({
   display: "swap",
 });
 
+// Sem isso o WhatsApp não resolve a imagem do card (a URL sai relativa).
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ??
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : "http://localhost:3000");
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: "Vôlei Prainha ZN",
   description: "Quem chegou, joga. Quem jogou menos, joga antes.",
   appleWebApp: { capable: true, statusBarStyle: "black-translucent" },
