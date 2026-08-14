@@ -60,14 +60,23 @@ export function applyMatchResult(input: {
   // Só quem estava em quadra NA HORA de registrar conta a partida.
   // Quem foi substituído antes disso volta pra fila intacto — pra ela
   // é como se nunca tivesse sido sorteada (mesma regra do bot).
+  //
+  // A espera anda aqui, não na hora do sorteio: quem foi sorteado e
+  // substituído antes do apito não perde a vez que tinha acumulado.
   const updated = players.map((p) => {
-    if (!won.has(p.id) && !lost.has(p.id)) return p;
-    return {
-      ...p,
-      gamesPlayed: p.gamesPlayed + 1,
-      lastPlayedAt: at,
-      rating: clampRating(p.rating + (won.has(p.id) ? RATING_STEP : -RATING_STEP)),
-    };
+    if (won.has(p.id) || lost.has(p.id)) {
+      return {
+        ...p,
+        gamesPlayed: p.gamesPlayed + 1,
+        lastPlayedAt: at,
+        roundsWaiting: 0,
+        rating: clampRating(p.rating + (won.has(p.id) ? RATING_STEP : -RATING_STEP)),
+      };
+    }
+    // quem estava esperando de fato — não conta quem nem fez check-in
+    // nem quem saiu da noite
+    if (p.checkedInAt === null || p.excluded) return p;
+    return { ...p, roundsWaiting: p.roundsWaiting + 1 };
   });
 
   // só continua a série quem já estava defendendo a quadra

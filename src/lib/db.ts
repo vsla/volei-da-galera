@@ -19,8 +19,27 @@ export type LiveState = {
     round: number;
     championStays: boolean;
     championStreak: number;
+    /** Quando a partida foi gerada — o cronômetro do placar sai daqui. */
+    startedAt: string | null;
     teamA: SessionPlayer[];
     teamB: SessionPlayer[];
+  } | null;
+  /**
+   * A última partida encerrada — o "entre partidas".
+   *
+   * Sem isso, terminar um jogo deixava a quadra vazia e o resultado só
+   * vivia num modal: fechou, perdeu. Com ela, o estado "time B venceu e
+   * está segurando a quadra esperando adversário" é derivado do banco,
+   * igual pra todo mundo, e sobrevive a recarregar a página.
+   */
+  lastMatch: {
+    round: number;
+    winner: Team | null;
+    scoreA: number | null;
+    scoreB: number | null;
+    teamA: SessionPlayer[];
+    teamB: SessionPlayer[];
+    finishedAt: string | null;
   } | null;
   history: PastMatch[];
   round: number;
@@ -67,6 +86,7 @@ export async function fetchState(): Promise<LiveState | null> {
       checkedInAt: (s?.checked_in_at as string) ?? null,
       gamesPlayed: (s?.games_played as number) ?? 0,
       lastPlayedAt: (s?.last_played_at as string) ?? null,
+      roundsWaiting: (s?.rounds_waiting as number) ?? 0,
       excluded: Boolean(s?.excluded),
     };
   });
@@ -80,6 +100,9 @@ export async function fetchState(): Promise<LiveState | null> {
       .filter((mp) => mp.team === team)
       .map((mp) => byId.get(mp.player_id as string))
       .filter((p): p is SessionPlayer => Boolean(p));
+
+  // rows vem ordenado por round desc, então o primeiro encerrado é o último jogo
+  const last = rows.find((m) => m.status === "finished");
 
   const history: PastMatch[] = rows
     .filter((m) => m.status === "finished")
@@ -105,8 +128,20 @@ export async function fetchState(): Promise<LiveState | null> {
           round: active.round as number,
           championStays: Boolean(active.champion_stays),
           championStreak: (active.champion_streak as number) ?? 0,
+          startedAt: (active.created_at as string) ?? null,
           teamA: teamOf(active, "A"),
           teamB: teamOf(active, "B"),
+        }
+      : null,
+    lastMatch: last
+      ? {
+          round: last.round as number,
+          winner: (last.winner_team as Team) ?? null,
+          scoreA: (last.score_a as number) ?? null,
+          scoreB: (last.score_b as number) ?? null,
+          teamA: teamOf(last, "A"),
+          teamB: teamOf(last, "B"),
+          finishedAt: (last.finished_at as string) ?? null,
         }
       : null,
     history,
@@ -334,6 +369,7 @@ export async function resetSession(sessionId: string) {
     .update({
       games_played: 0,
       last_played_at: null,
+      rounds_waiting: 0,
       checked_in_at: null,
       excluded: false,
     })
@@ -530,6 +566,9 @@ export type FinishSummary = {
 export async function finishMatch(
   state: LiveState,
   winner: Team,
+  /** Placar, quando alguém marcou ponto a ponto. Sem ele a partida é
+      registrada só com o vencedor — que é o caminho normal. */
+  score?: { a: number; b: number },
 ): Promise<FinishSummary | null> {
   const match = state.activeMatch;
   if (!match) return null;
@@ -549,12 +588,18 @@ export async function finishMatch(
   const onCourt = new Set([...match.teamA, ...match.teamB].map((p) => p.id));
   const touched = outcome.players.filter((p) => onCourt.has(p.id));
 
+  // a espera de quem ficou de fora também andou: grava a fila junto
+  const waiting = outcome.players.filter(
+    (p) => !onCourt.has(p.id) && p.checkedInAt !== null && !p.excluded,
+  );
+
   await supabase.from("session_players").upsert(
-    touched.map((p) => ({
+    [...touched, ...waiting].map((p) => ({
       session_id: state.sessionId,
       player_id: p.id,
       games_played: p.gamesPlayed,
       last_played_at: p.lastPlayedAt,
+      rounds_waiting: p.roundsWaiting,
       checked_in_at: p.checkedInAt,
     })),
     { onConflict: "session_id,player_id" },
@@ -569,7 +614,12 @@ export async function finishMatch(
 
   await supabase
     .from("matches")
-    .update({ status: "finished", winner_team: winner, finished_at: at })
+    .update({
+      status: "finished",
+      winner_team: winner,
+      finished_at: at,
+      ...(score ? { score_a: score.a, score_b: score.b } : {}),
+    })
     .eq("id", match.id);
 
   await supabase

@@ -16,6 +16,14 @@ export type SessionPlayer = Player & {
   checkedInAt: string | null;
   gamesPlayed: number;
   lastPlayedAt: string | null;
+  /**
+   * Rodadas seguidas sem jogar. Zera ao jogar, +1 a cada partida
+   * registrada em que a pessoa ficou de fora.
+   *
+   * Mede a mesma coisa que `lastPlayedAt`, mas na unidade que a galera
+   * usa pra reclamar ("tô fora há 3 rodadas") — e é o que a fila mostra.
+   */
+  roundsWaiting: number;
   excluded: boolean;
 };
 

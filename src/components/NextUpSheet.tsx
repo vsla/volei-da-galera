@@ -18,6 +18,7 @@ import { courtNames, type SessionPlayer, type Team } from "@/lib/types";
  */
 export function NextUpSheet({
   summary,
+  score,
   teamA,
   teamB,
   missing,
@@ -27,6 +28,8 @@ export function NextUpSheet({
   onClose,
 }: {
   summary: FinishSummary;
+  /** Placar da partida que acabou, quando alguém marcou. */
+  score?: { a: number | null; b: number | null };
   /** Prévia da próxima partida. null quando ainda não dá pra formar. */
   teamA: SessionPlayer[] | null;
   teamB: SessionPlayer[] | null;
@@ -66,6 +69,11 @@ export function NextUpSheet({
         <div className="mb-1 flex items-center">
           <h2 className="font-display text-ink text-xl font-extrabold tracking-widest uppercase">
             {winnerLabel} venceu
+            {score && score.a !== null && score.b !== null && (
+              <span className="tnum text-muted ml-2">
+                {Math.max(score.a, score.b)}×{Math.min(score.a, score.b)}
+              </span>
+            )}
           </h2>
           <button
             type="button"

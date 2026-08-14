@@ -4,12 +4,15 @@ import { useMemo, useState } from "react";
 import { Header } from "./Header";
 import { LiveStrip } from "./LiveStrip";
 import { CourtCard, EmptyCourt } from "./CourtCard";
+import { FinishedCourt } from "./FinishedCourt";
 import { Queue } from "./Queue";
 import { BottomBar, type BottomState } from "./BottomBar";
 import { WhySheet } from "./WhySheet";
 import { NextUpSheet } from "./NextUpSheet";
 import { ResetSheet } from "./ResetSheet";
+import { ConfirmSheet } from "./ConfirmSheet";
 import { OrganizerMenu } from "./OrganizerMenu";
+import { Scoreboard } from "./Scoreboard";
 import { PlayerSheet, type PlayerContext } from "./PlayerSheet";
 import { Highlights } from "./Highlights";
 import { OrganizerSheet } from "./OrganizerSheet";
@@ -58,10 +61,23 @@ export function Lobby({
   const [checkIns, setCheckIns] = useState(false);
   const [askReset, setAskReset] = useState(false);
   const [menu, setMenu] = useState(false);
-  // partida recém-encerrada, esperando o organizador confirmar a próxima
-  const [nextUp, setNextUp] = useState<
-    { summary: FinishSummary; nonce: string } | null
-  >(null);
+  const [score, setScore] = useState(false);
+  /** Confirmação pendente — ver ConfirmSheet. */
+  const [confirm, setConfirm] = useState<{
+    title: string;
+    body?: string;
+    confirmLabel: string;
+    tone?: "normal" | "danger";
+    action: () => void;
+  } | null>(null);
+  /**
+   * A próxima partida está sendo mostrada?
+   *
+   * O ESTADO de "entre partidas" não mora aqui — mora no banco
+   * (`lastMatch` + `championIds`). Aqui só fica se a folha está aberta e
+   * com qual seed, pra poder fechar e reabrir sem perder nada.
+   */
+  const [nextUp, setNextUp] = useState<{ nonce: string } | null>(null);
   const [sheet, setSheet] = useState<
     { player: SessionPlayer; context: PlayerContext } | null
   >(null);
@@ -122,6 +138,62 @@ export function Lobby({
     return r;
   }, [nextUp, state]);
 
+  /**
+   * Ranking de nota — posição de cada um, 1 = maior nota. Igual ao do
+   * bot. Só o organizador recebe: pra galera a nota segue invisível.
+   */
+  const ranking = useMemo(() => {
+    if (!org) return undefined;
+    const sorted = state.players
+      .slice()
+      .sort((a, b) => b.rating - a.rating || a.name.localeCompare(b.name));
+    return new Map(sorted.map((p, i) => [p.id, i + 1]));
+  }, [org, state.players]);
+
+  /** Quem entra na próxima partida, pra fila marcar com ▶. */
+  const nextUpIds = useMemo(() => {
+    const r = generateNextMatch({
+      players: state.players,
+      teamSize: state.teamSize,
+      champion: state.championIds.length
+        ? { playerIds: state.championIds, streak: state.championStreak }
+        : null,
+      maxStreak: state.maxStreak,
+      history: state.history,
+      seed: `${state.sessionId}|${state.round + 1}|`,
+    });
+    if (!r.ok) return undefined;
+    const champions = new Set(state.championIds);
+    return new Set(
+      [...r.teamA, ...r.teamB].map((p) => p.id).filter((id) => !champions.has(id)),
+    );
+  }, [state]);
+
+  /**
+   * O resumo da última partida, derivado do banco.
+   *
+   * Antes vinha do retorno do `finishMatch` e vivia só na memória: quem
+   * fechasse o modal perdia, e quem abrisse o site depois nunca via.
+   */
+  const lastSummary: FinishSummary | null = useMemo(() => {
+    const last = state.lastMatch;
+    if (!last || !last.winner || match) return null;
+
+    const staying = new Set(state.championIds);
+    const onCourt = [...last.teamA, ...last.teamB];
+    if (!staying.size) return null;
+
+    const winners = last.winner === "A" ? last.teamA : last.teamB;
+    return {
+      winner: last.winner,
+      staying: onCourt.filter((p) => staying.has(p.id)),
+      leaving: onCourt.filter((p) => !staying.has(p.id)),
+      // o vencedor foi desfeito se nenhum dele ficou na quadra
+      winnerDissolved: !winners.some((p) => staying.has(p.id)),
+      streak: state.championStreak,
+    };
+  }, [state.lastMatch, state.championIds, state.championStreak, match]);
+
   const myQueuePos = queue.findIndex((p) => p.id === meId) + 1;
   const amPlaying = onCourt.has(meId);
 
@@ -160,13 +232,31 @@ export function Lobby({
       }
     });
 
-  const doFinish = (winner: Team) =>
+  const doFinish = (winner: Team, score?: { a: number; b: number }) =>
     run(async () => {
-      const summary = await finishMatch(state, winner);
+      const summary = await finishMatch(state, winner, score);
+      if (match) localStorage.removeItem(`placar:${match.id}`);
+      setScore(false);
       navigator.vibrate?.(30);
       // a próxima partida não é gravada aqui: primeiro a galera vê
       // quem fica, quem sai e quem entra
-      if (summary) setNextUp({ summary, nonce: String(Date.now()) });
+      if (summary) setNextUp({ nonce: String(Date.now()) });
+    });
+
+  /** Nomes curtos dos times, pra confirmação dizer QUEM ganhou. */
+  const teamNames = (team: Team) =>
+    (team === "A" ? match?.teamA : match?.teamB)
+      ?.map((p) => p.name.split(/\s+/)[0])
+      .join(", ") ?? "";
+
+  const askFinish = (winner: Team, sc?: { a: number; b: number }) =>
+    setConfirm({
+      title: `Time ${winner} venceu?`,
+      body: sc
+        ? `Placar ${sc.a}×${sc.b}. Isso encerra a partida, conta o jogo de todo mundo em quadra e mexe na fila.`
+        : `${teamNames(winner)}. Isso encerra a partida, conta o jogo de todo mundo em quadra e mexe na fila.`,
+      confirmLabel: `Time ${winner} venceu`,
+      action: () => doFinish(winner, sc),
     });
 
   const doConfirmNext = () =>
@@ -248,7 +338,15 @@ export function Lobby({
   else if (!amCheckedIn) bottom = { kind: "check-in", onAction: doCheckIn };
   else if (amPlaying) bottom = { kind: "playing" };
   else if (org && !match)
-    bottom = { kind: "generate", onAction: () => doGenerate(false), disabled: busy };
+    bottom = {
+      kind: "generate",
+      // entre partidas, o botão abre a prévia em vez de sortear direto —
+      // mesmo caminho do card, pra não existirem dois fluxos diferentes
+      onAction: lastSummary
+        ? () => setNextUp({ nonce: String(Date.now()) })
+        : () => doGenerate(false),
+      disabled: busy,
+    };
   else if (myQueuePos > 0) bottom = { kind: "in-queue", position: myQueuePos };
   else bottom = { kind: "check-in", onAction: doCheckIn };
 
@@ -277,12 +375,25 @@ export function Lobby({
             streak={match.championStreak}
             meId={meId}
             canFinish={org}
-            onWin={doFinish}
+            ranking={ranking}
+            onWin={askFinish}
             onPlayerTap={
               org
                 ? (player, team) => setSheet({ player, context: { where: "court", team } })
                 : undefined
             }
+          />
+        ) : state.lastMatch && lastSummary ? (
+          /* entre partidas: resultado + quem segura a quadra + botão pra
+             reabrir a próxima quantas vezes precisar */
+          <FinishedCourt
+            last={state.lastMatch}
+            championIds={state.championIds}
+            championStreak={state.championStreak}
+            meId={meId}
+            canStart={org}
+            busy={busy}
+            onOpenNext={() => setNextUp({ nonce: String(Date.now()) })}
           />
         ) : (
           <EmptyCourt missing={Math.max(0, missing)} />
@@ -292,10 +403,30 @@ export function Lobby({
           <p className="text-live mx-4 mt-3 text-center text-sm">{msg}</p>
         )}
 
+        {/* pra quem está de fora marcando ponto a ponto — opcional, o
+            "A ganhou / B ganhou" do card continua sendo o caminho curto */}
         {org && match && (
           <button
             type="button"
-            onClick={() => doGenerate(true)}
+            onClick={() => setScore(true)}
+            className="font-display border-border text-ink mx-4 mt-3 flex h-14 w-full max-w-[calc(100%-2rem)] items-center justify-center gap-2 rounded-[12px] border text-base font-bold tracking-widest uppercase"
+          >
+            🔢 abrir placar
+          </button>
+        )}
+
+        {org && match && (
+          <button
+            type="button"
+            onClick={() =>
+              setConfirm({
+                title: "Re-sortear esta partida?",
+                body: "Os times que estão em quadra agora são desfeitos e sorteados de novo. O campeão continua segurando a quadra.",
+                confirmLabel: "Re-sortear",
+                tone: "danger",
+                action: () => doGenerate(true),
+              })
+            }
             disabled={busy}
             className="font-display text-muted hover:text-ink mx-4 mt-3 block h-12 text-sm tracking-widest uppercase disabled:opacity-40"
           >
@@ -306,6 +437,8 @@ export function Lobby({
         <Queue
           players={queue}
           meId={meId}
+          ranking={ranking}
+          nextUpIds={nextUpIds}
           onExplain={() => setWhy(true)}
           onPlayerTap={
             org ? (player) => setSheet({ player, context: { where: "queue" } }) : undefined
@@ -371,17 +504,43 @@ export function Lobby({
         />
       )}
 
+      {score && match && (
+        <Scoreboard
+          matchId={match.id}
+          startedAt={match.startedAt}
+          busy={busy}
+          onFinish={(winner, s) => askFinish(winner, s)}
+          onClose={() => setScore(false)}
+        />
+      )}
+
       {menu && (
         <OrganizerMenu
           status={state.status}
           busy={busy}
+          canRebalance={Boolean(match)}
           onCheckIns={() => {
             setMenu(false);
             setCheckIns(true);
           }}
+          onRebalance={() => {
+            setMenu(false);
+            setConfirm({
+              title: "Rebalancear os times?",
+              body: "Os dois times são desfeitos e montados de novo do zero. Quem está segurando a quadra perde a vez de defender.",
+              confirmLabel: "Rebalancear",
+              tone: "danger",
+              action: () => doGenerate(true),
+            });
+          }}
           onEndNight={() => {
             setMenu(false);
-            run(() => openVoting(state.sessionId));
+            setConfirm({
+              title: "Encerrar a noite?",
+              body: "Acaba o jogo e abre a votação dos Destaques. Dá pra voltar pra quadra depois, pela engrenagem.",
+              confirmLabel: "Encerrar a noite",
+              action: () => run(() => openVoting(state.sessionId)),
+            });
           }}
           onReopen={() => {
             setMenu(false);
@@ -395,6 +554,22 @@ export function Lobby({
         />
       )}
 
+      {/* z-index acima das outras folhas: pode ser aberta a partir delas */}
+      {confirm && (
+        <ConfirmSheet
+          title={confirm.title}
+          body={confirm.body}
+          confirmLabel={confirm.confirmLabel}
+          tone={confirm.tone}
+          busy={busy}
+          onConfirm={() => {
+            confirm.action();
+            setConfirm(null);
+          }}
+          onClose={() => setConfirm(null)}
+        />
+      )}
+
       {askReset && (
         <ResetSheet
           checkedIn={checkedIn.length}
@@ -405,9 +580,14 @@ export function Lobby({
         />
       )}
 
-      {nextUp && (
+      {nextUp && lastSummary && (
         <NextUpSheet
-          summary={nextUp.summary}
+          summary={lastSummary}
+          score={
+            state.lastMatch
+              ? { a: state.lastMatch.scoreA, b: state.lastMatch.scoreB }
+              : undefined
+          }
           teamA={nextUpMatch?.ok ? nextUpMatch.teamA : null}
           teamB={nextUpMatch?.ok ? nextUpMatch.teamB : null}
           missing={nextUpMatch && !nextUpMatch.ok ? nextUpMatch.missing : 0}

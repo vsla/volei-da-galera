@@ -390,6 +390,110 @@ describe("nota", () => {
   });
 });
 
+/**
+ * O equilíbrio escolhe ENTRE OS EMPATADOS em jogos — nunca alcança quem
+ * jogou mais. Ver reasonable.md §5.
+ */
+describe("equilíbrio não fura a fila", () => {
+  const champions = Array.from({ length: 6 }, (_, i) =>
+    player(`camp${i}`, { rating: 9, gamesPlayed: 3 }),
+  );
+
+  it("escolhe os fortes quando eles estão EMPATADOS com os fracos", () => {
+    // campeão forte na quadra; fila com fracos e fortes, todos com 1 jogo.
+    // A nota decide, porque ninguém perde a vez pra isso.
+    const players = [
+      ...champions,
+      ...Array.from({ length: 6 }, (_, i) =>
+        player(`fraco${i}`, { rating: 1, gamesPlayed: 1 }),
+      ),
+      ...Array.from({ length: 6 }, (_, i) =>
+        player(`forte${i}`, { rating: 10, gamesPlayed: 1 }),
+      ),
+    ];
+    const r = ok(
+      generateNextMatch({
+        ...base,
+        players,
+        champion: { playerIds: ids(champions), streak: 1 },
+        seed: "eq1",
+      }),
+    );
+    expect(ids(r.teamB).filter((id) => id.startsWith("forte")).length).toBeGreaterThan(3);
+    expect(r.explanation.extraGamesUsed).toBe(0);
+  });
+
+  it("NÃO alcança quem jogou mais, nem por um jogo, nem pra salvar a partida", () => {
+    // os fortes com 1 jogo a mais equilibrariam perfeitamente — e mesmo
+    // assim ficam de fora: quem jogou menos entra primeiro, ponto.
+    const players = [
+      ...champions,
+      ...Array.from({ length: 6 }, (_, i) =>
+        player(`fraco${i}`, { rating: 1, gamesPlayed: 1 }),
+      ),
+      ...Array.from({ length: 6 }, (_, i) =>
+        player(`forte${i}`, { rating: 10, gamesPlayed: 2 }),
+      ),
+    ];
+    const r = ok(
+      generateNextMatch({
+        ...base,
+        players,
+        champion: { playerIds: ids(champions), streak: 1 },
+        seed: "eq2",
+      }),
+    );
+    expect(ids(r.teamB).filter((id) => id.startsWith("forte"))).toHaveLength(0);
+    expect(r.explanation.extraGamesUsed).toBe(0);
+  });
+
+  it("ninguém com mais jogos que o corte entra, em nenhuma rodada da noite", () => {
+    // varre uma noite inteira: a trava vale sempre, não só no caso montado
+    let players = roster(19);
+    let champion: Champion = null;
+    for (let round = 0; round < 12; round++) {
+      const r = generateNextMatch({
+        ...base,
+        players,
+        champion,
+        seed: `noite|${round}`,
+      });
+      if (!r.ok) break;
+      expect(r.explanation.extraGamesUsed).toBe(0);
+      const out = applyMatchResult({
+        players,
+        teamA: r.teamA,
+        teamB: r.teamB,
+        winner: round % 2 === 0 ? "A" : "B",
+        championStays: r.championStays,
+        championStreak: champion?.streak ?? 0,
+        maxStreak: 2,
+        at: `2026-08-14T2${round % 10}:00:00Z`,
+      });
+      players = out.players;
+      champion = out.champion;
+    }
+  });
+});
+
+describe("rodadas esperando", () => {
+  it("quem está fora há mais rodadas entra antes, com os mesmos jogos", () => {
+    const players = [
+      player("recente", { gamesPlayed: 1, roundsWaiting: 0 }),
+      player("antigo", { gamesPlayed: 1, roundsWaiting: 4 }),
+    ];
+    expect(ids(orderQueue(players, "s"))).toEqual(["antigo", "recente"]);
+  });
+
+  it("jogos ainda mandam mais que a espera", () => {
+    const players = [
+      player("esperou", { gamesPlayed: 2, roundsWaiting: 9 }),
+      player("novato", { gamesPlayed: 0, roundsWaiting: 0 }),
+    ];
+    expect(ids(orderQueue(players, "s"))).toEqual(["novato", "esperou"]);
+  });
+});
+
 describe("nota após a partida", () => {
   const teamA = Array.from({ length: 6 }, (_, i) => player(`a${i}`, { rating: 5 }));
   const teamB = Array.from({ length: 6 }, (_, i) => player(`b${i}`, { rating: 5 }));
@@ -436,6 +540,31 @@ describe("nota após a partida", () => {
     expect(s.gamesPlayed).toBe(3);
     expect(s.rating).toBe(5);
     expect(s.lastPlayedAt).toBeNull();
+  });
+
+  it("a espera zera pra quem jogou e sobe pra quem ficou de fora", () => {
+    const after = apply({ id: "a0", roundsWaiting: 4 });
+    expect(after.find((p) => p.id === "a0")!.roundsWaiting).toBe(0);
+    expect(after.find((p) => p.id === "b0")!.roundsWaiting).toBe(0);
+    expect(after.find((p) => p.id === "fora")!.roundsWaiting).toBe(1);
+  });
+
+  it("quem não fez check-in ou foi embora não acumula espera", () => {
+    const ausente = player("ausente", { checkedInAt: null });
+    const saiu = player("saiu-da-noite", { excluded: true });
+    const { players: after } = applyMatchResult({
+      players: [...teamA, ...teamB, fora, ausente, saiu],
+      teamA,
+      teamB,
+      winner: "A",
+      championStays: false,
+      championStreak: 0,
+      maxStreak: 2,
+      at: "2026-08-14T20:00:00Z",
+    });
+    expect(after.find((p) => p.id === "ausente")!.roundsWaiting).toBe(0);
+    expect(after.find((p) => p.id === "saiu-da-noite")!.roundsWaiting).toBe(0);
+    expect(after.find((p) => p.id === "fora")!.roundsWaiting).toBe(1);
   });
 });
 

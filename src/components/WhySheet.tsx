@@ -92,6 +92,20 @@ export function WhySheet({
                   <dt>🎲 empate resolvido por sorteio</dt>
                 </div>
               )}
+              {/* furar a fila nunca pode ser silencioso: se aconteceu,
+                  a tela diz quantos e por quê */}
+              {explanation.extraGamesUsed > 0 && (
+                <div className="flex gap-2">
+                  <dt className="text-accent">
+                    ⚡ {explanation.extraGamesUsed}{" "}
+                    {explanation.extraGamesUsed === 1
+                      ? "entrou com 1 jogo a mais"
+                      : "entraram com 1 jogo a mais"}{" "}
+                    pra partida não ser atropelo — voltam pra frente da fila na
+                    próxima
+                  </dt>
+                </div>
+              )}
             </dl>
           </>
         )}
