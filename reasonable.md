@@ -194,7 +194,54 @@ na quadra: aquele mantém o campeão e só troca o desafiante.
 |---|---|
 | `match-generator.ts` → `forceReshuffle` | `"resortear todo mundo ignora o campeão e monta 12 do zero"` |
 
-## 11. Reset e desfazer o encerramento
+## 11. Placar (opcional)
+
+**Regra.** "🔢 abrir placar" abre uma tela cheia com dois lados, `+`/`−` e o
+número gigante, mais um cronômetro desde o início da partida. "Finalizar"
+registra o vencedor **e** o placar. Empate não fecha — a rotação precisa saber
+quem fica na quadra.
+
+**Por quê ele é opcional.** O `RESUMO.md` decidiu "1 toque, sem placar", e a
+decisão continua valendo pro caminho normal: no meio do jogo, à noite, com a mão
+com areia, ninguém digita ponto — e uma partida não registrada trava a fila
+inteira, que é bem pior que não ter o placar. Então "A ganhou / B ganhou"
+continua sendo o caminho curto, e o placar existe pra outra situação: alguém
+sentado fora da quadra marcando ponto a ponto.
+
+Por isso `matches.score_a/score_b` são **NULL-áveis de propósito**: partida sem
+placar é normal, não é dado faltando.
+
+O placar é salvo no `localStorage` por partida — celular travar ou recarregar a
+aba não perde os pontos.
+
+| Onde | Teste |
+|---|---|
+| `Scoreboard.tsx`, `db.ts` → `finishMatch(state, winner, score?)` | — (UI) |
+
+## 12. Confirmação nas ações críticas
+
+**Regra.** Ação que desfaz trabalho já feito passa por um `ConfirmSheet`:
+finalizar partida (pelo card ou pelo placar), re-sortear a partida, rebalancear
+os times, encerrar a noite. O reset da noite é mais duro ainda: exige digitar
+`RESETAR`.
+
+**Por quê.** A tela é operada em pé, no escuro, com o celular na mão e areia em
+tudo — encostar sem querer é o caso normal, não a exceção. E o custo é
+assimétrico: um toque a mais custa meio segundo, enquanto finalizar a partida
+errada conta jogo pra 12 pessoas, mexe na nota de todo mundo e embaralha a fila.
+
+O texto do botão diz **o que vai acontecer** ("Time A venceu"), nunca "OK" — a
+confirmação só protege se você conseguir ler o que está confirmando. E o corpo
+lista os nomes do time, pra dar pra conferir antes.
+
+O que **não** tem confirmação, de propósito: check-in, "voltar pra quadra"
+(não apaga nada) e "Começar esta partida" (você acabou de ver a prévia).
+
+| Onde | Teste |
+|---|---|
+| `ConfirmSheet.tsx`, `Lobby.tsx` → `askFinish` | — (UI) |
+
+## 13. Reset e desfazer o encerramento
 
 **Regra.** Duas ações separadas, ambas atrás da engrenagem:
 
@@ -221,6 +268,13 @@ confirmar.
 | `0003_court_state.sql` | `players.rating`, `sessions.champion_ids/streak`, `matches.champion_stays` |
 | `0004_reset.sql` | devolve `delete` em `matches` e votos, pro reset funcionar |
 | `0005_rounds_waiting.sql` | `session_players.rounds_waiting` |
+| `0006_placar.sql` | `matches.score_a/score_b`, ambos NULL-áveis |
+| `0007_policies_reassert.sql` | **fonte da verdade das policies** — idempotente |
+
+⚠️ **Não re-rode a `0001`.** Ela recria as policies `*_open` com `for all`, o que
+reabre a leitura dos votos e devolve o `delete` em `sessions`/`players`. Se o
+banco parecer estranho, rode a **`0007`**: ela apaga toda policy e reescreve o
+estado final desejado, quantas vezes precisar.
 
 ## Como rodar os testes
 
