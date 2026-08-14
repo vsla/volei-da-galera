@@ -9,11 +9,26 @@
 const URL_BASE = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
-async function rest<T>(path: string, revalidate = 60): Promise<T> {
+/**
+ * Chama uma função do banco. É por aqui que os Destaques são lidos: a
+ * tabela `highlight_votes` não tem `select` liberado (voto é privado),
+ * então quem devolve os nomes é a função agregada `highlight_days`.
+ */
+async function rpc<T>(
+  fn: string,
+  args: Record<string, unknown>,
+  revalidate = 60,
+): Promise<T> {
   if (!URL_BASE || !KEY) return [] as unknown as T;
   try {
-    const r = await fetch(`${URL_BASE}/rest/v1/${path}`, {
-      headers: { apikey: KEY, Authorization: `Bearer ${KEY}` },
+    const r = await fetch(`${URL_BASE}/rest/v1/rpc/${fn}`, {
+      method: "POST",
+      headers: {
+        apikey: KEY,
+        Authorization: `Bearer ${KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(args),
       next: { revalidate },
     });
     if (!r.ok) return [] as unknown as T;
@@ -23,6 +38,35 @@ async function rest<T>(path: string, revalidate = 60): Promise<T> {
   }
 }
 
+type TallyRow = {
+  session_id: string;
+  played_on: string;
+  player_id: string;
+  name: string;
+  votes: number;
+};
+
+/** Agrupa as linhas da função por noite. */
+function groupDays(rows: TallyRow[]): HighlightDay[] {
+  const byDay = new Map<string, HighlightDay>();
+  for (const row of rows) {
+    const day = byDay.get(row.session_id) ?? {
+      sessionId: row.session_id,
+      date: row.played_on,
+      winners: [],
+      // a função não devolve quantos votaram — e não vai devolver:
+      // seria a única informação daqui capaz de identificar votante
+      voters: 0,
+    };
+    day.winners.push({ id: row.player_id, name: row.name });
+    byDay.set(row.session_id, day);
+  }
+  for (const day of byDay.values()) {
+    day.winners.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  }
+  return [...byDay.values()];
+}
+
 export type HighlightDay = {
   sessionId: string;
   date: string;
@@ -30,91 +74,15 @@ export type HighlightDay = {
   voters: number;
 };
 
-type SessionRow = { id: string; date: string; status: string };
-type VoteRow = { session_id: string; voter_id: string; player_id: string };
-type PlayerRow = { id: string; name: string };
-
-/**
- * Apura os três destaques de cada noite.
- *
- * A contagem por jogador existe só aqui dentro e nunca sai daqui. Os
- * nomes saem em ordem alfabética — sem pódio, sem primeiro lugar.
- */
-function tally(
-  votes: VoteRow[],
-  players: Map<string, PlayerRow>,
-  top = 3,
-): { winners: { id: string; name: string }[]; voters: number } {
-  const counts = new Map<string, number>();
-  const voters = new Set<string>();
-
-  for (const v of votes) {
-    counts.set(v.player_id, (counts.get(v.player_id) ?? 0) + 1);
-    voters.add(v.voter_id);
-  }
-
-  const winners = [...counts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, top)
-    .map(([id]) => players.get(id))
-    .filter((p): p is PlayerRow => Boolean(p))
-    .map((p) => ({ id: p.id, name: p.name }))
-    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-
-  return { winners, voters: voters.size };
-}
-
 /** Todas as noites que já tiveram destaque, da mais recente pra mais antiga. */
 export async function listHighlightDays(): Promise<HighlightDay[]> {
-  const sessions = await rest<SessionRow[]>(
-    "sessions?select=id,date,status&order=date.desc&limit=60",
-  );
-  if (!sessions.length) return [];
-
-  const ids = sessions.map((s) => s.id);
-  const [votes, players] = await Promise.all([
-    rest<VoteRow[]>(
-      `highlight_votes?select=session_id,voter_id,player_id&session_id=in.(${ids.join(",")})`,
-    ),
-    rest<PlayerRow[]>("players?select=id,name"),
-  ]);
-
-  const byPlayer = new Map(players.map((p) => [p.id, p]));
-  const bySession = new Map<string, VoteRow[]>();
-  for (const v of votes) {
-    bySession.set(v.session_id, [...(bySession.get(v.session_id) ?? []), v]);
-  }
-
-  return sessions
-    .map((s) => ({ session: s, votes: bySession.get(s.id) ?? [] }))
-    .filter(({ votes }) => votes.length > 0)
-    .map(({ session, votes }) => ({
-      sessionId: session.id,
-      date: session.date,
-      ...tally(votes, byPlayer),
-    }));
+  return groupDays(await rpc<TallyRow[]>("highlight_days", { p_limit: 60 }));
 }
 
 /** Os destaques de uma data específica. */
 export async function getHighlightDay(date: string): Promise<HighlightDay | null> {
-  const sessions = await rest<SessionRow[]>(
-    `sessions?select=id,date,status&date=eq.${date}&limit=1`,
-  );
-  const session = sessions[0];
-  if (!session) return null;
-
-  const [votes, players] = await Promise.all([
-    rest<VoteRow[]>(
-      `highlight_votes?select=session_id,voter_id,player_id&session_id=eq.${session.id}`,
-    ),
-    rest<PlayerRow[]>("players?select=id,name"),
-  ]);
-
-  return {
-    sessionId: session.id,
-    date: session.date,
-    ...tally(votes, new Map(players.map((p) => [p.id, p]))),
-  };
+  const days = await listHighlightDays();
+  return days.find((d) => d.date === date) ?? null;
 }
 
 /**

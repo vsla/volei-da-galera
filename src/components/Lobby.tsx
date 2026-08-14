@@ -11,6 +11,7 @@ import { WhySheet } from "./WhySheet";
 import { NextUpSheet } from "./NextUpSheet";
 import { ResetSheet } from "./ResetSheet";
 import { ConfirmSheet } from "./ConfirmSheet";
+import { HistorySheet } from "./HistorySheet";
 import { OrganizerMenu } from "./OrganizerMenu";
 import { Scoreboard } from "./Scoreboard";
 import { PlayerSheet, type PlayerContext } from "./PlayerSheet";
@@ -62,6 +63,7 @@ export function Lobby({
   const [askReset, setAskReset] = useState(false);
   const [menu, setMenu] = useState(false);
   const [score, setScore] = useState(false);
+  const [history, setHistory] = useState(false);
   /** Confirmação pendente — ver ConfirmSheet. */
   const [confirm, setConfirm] = useState<{
     title: string;
@@ -358,6 +360,7 @@ export function Lobby({
         dateLabel={dateLabel(state.date)}
         isOrganizer={org}
         onOpenEdit={() => setMenu(true)}
+        onOpenHistory={() => setHistory(true)}
       />
       <LiveStrip
         checkedIn={checkedIn.length}
@@ -551,6 +554,14 @@ export function Lobby({
             setAskReset(true);
           }}
           onClose={() => setMenu(false)}
+        />
+      )}
+
+      {history && (
+        <HistorySheet
+          sessionId={state.sessionId}
+          players={state.players}
+          onClose={() => setHistory(false)}
         />
       )}
 

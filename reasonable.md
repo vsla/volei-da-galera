@@ -241,7 +241,34 @@ O que **não** tem confirmação, de propósito: check-in, "voltar pra quadra"
 |---|---|
 | `ConfirmSheet.tsx`, `Lobby.tsx` → `askFinish` | — (UI) |
 
-## 13. Reset e desfazer o encerramento
+## 13. Histórico (o menu ☰)
+
+**Regra.** O ☰ no header abre o histórico, **pra todo mundo**, com duas abas:
+
+- **Hoje** — todas as partidas encerradas da noite: times, quem ganhou, placar
+  quando existe, e a hora. Some quando o organizador reseta a noite.
+- **Outras peladas** — os três Destaques de cada sexta anterior.
+
+**Por quê é aberto.** É leitura pura, não muda estado nenhum. E ter que
+perguntar pro organizador "quem ganhou a terceira?" é exatamente o tipo de coisa
+que o site existe pra eliminar.
+
+**Por que fica fora do `fetchState`.** O estado ao vivo é relido a cada
+atualização e não pode crescer com a noite; o histórico é buscado só quando
+alguém abre o menu (`fetchDayMatches`).
+
+**Os Destaques passam por função agregada.** A `0002` fechou o `select` em
+`highlight_votes` — com isso, a leitura direta que o `highlights-server.ts`
+fazia passou a devolver vazio (a página `/destaques` estava quebrada e ninguém
+tinha notado). Agora quem responde é a `highlight_days` (migration `0008`),
+`security definer`, que só devolve **nome e contagem do jogador** — nunca
+`voter_id`, nunca contagem por votante.
+
+| Onde | Teste |
+|---|---|
+| `HistorySheet.tsx`, `db.ts` → `fetchDayMatches`, `fetchHighlightDays` | — (UI) |
+
+## 14. Reset e desfazer o encerramento
 
 **Regra.** Duas ações separadas, ambas atrás da engrenagem:
 
@@ -270,6 +297,7 @@ confirmar.
 | `0005_rounds_waiting.sql` | `session_players.rounds_waiting` |
 | `0006_placar.sql` | `matches.score_a/score_b`, ambos NULL-áveis |
 | `0007_policies_reassert.sql` | **fonte da verdade das policies** — idempotente |
+| `0008_highlight_days.sql` | `highlight_days()` — destaques de cada noite, agregados |
 
 ⚠️ **Não re-rode a `0001`.** Ela recria as policies `*_open` com `for all`, o que
 reabre a leitura dos votos e devolve o `delete` em `sessions`/`players`. Se o
