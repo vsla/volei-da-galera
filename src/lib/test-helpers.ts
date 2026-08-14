@@ -22,6 +22,7 @@ export function player(
     checkedInAt: "2026-08-14T19:00:00Z",
     gamesPlayed: 0,
     lastPlayedAt: null,
+    roundsWaiting: 0,
     excluded: false,
     ...over,
   };

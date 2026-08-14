@@ -122,6 +122,37 @@ export function Lobby({
     return r;
   }, [nextUp, state]);
 
+  /**
+   * Ranking de nota — posição de cada um, 1 = maior nota. Igual ao do
+   * bot. Só o organizador recebe: pra galera a nota segue invisível.
+   */
+  const ranking = useMemo(() => {
+    if (!org) return undefined;
+    const sorted = state.players
+      .slice()
+      .sort((a, b) => b.rating - a.rating || a.name.localeCompare(b.name));
+    return new Map(sorted.map((p, i) => [p.id, i + 1]));
+  }, [org, state.players]);
+
+  /** Quem entra na próxima partida, pra fila marcar com ▶. */
+  const nextUpIds = useMemo(() => {
+    const r = generateNextMatch({
+      players: state.players,
+      teamSize: state.teamSize,
+      champion: state.championIds.length
+        ? { playerIds: state.championIds, streak: state.championStreak }
+        : null,
+      maxStreak: state.maxStreak,
+      history: state.history,
+      seed: `${state.sessionId}|${state.round + 1}|`,
+    });
+    if (!r.ok) return undefined;
+    const champions = new Set(state.championIds);
+    return new Set(
+      [...r.teamA, ...r.teamB].map((p) => p.id).filter((id) => !champions.has(id)),
+    );
+  }, [state]);
+
   const myQueuePos = queue.findIndex((p) => p.id === meId) + 1;
   const amPlaying = onCourt.has(meId);
 
@@ -306,6 +337,8 @@ export function Lobby({
         <Queue
           players={queue}
           meId={meId}
+          ranking={ranking}
+          nextUpIds={nextUpIds}
           onExplain={() => setWhy(true)}
           onPlayerTap={
             org ? (player) => setSheet({ player, context: { where: "queue" } }) : undefined
@@ -375,9 +408,14 @@ export function Lobby({
         <OrganizerMenu
           status={state.status}
           busy={busy}
+          canRebalance={Boolean(match)}
           onCheckIns={() => {
             setMenu(false);
             setCheckIns(true);
+          }}
+          onRebalance={() => {
+            setMenu(false);
+            doGenerate(true);
           }}
           onEndNight={() => {
             setMenu(false);

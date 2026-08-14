@@ -11,6 +11,8 @@ export function Queue({
   meId,
   onExplain,
   onPlayerTap,
+  ranking,
+  nextUpIds,
 }: {
   /** já ordenada pela fila: menos jogos → há mais tempo sem jogar → sorteio */
   players: SessionPlayer[];
@@ -18,6 +20,13 @@ export function Queue({
   onExplain?: () => void;
   /** Organizador toca pra botar na quadra ou marcar que foi embora. */
   onPlayerTap?: (player: SessionPlayer) => void;
+  /**
+   * Posição de cada um no ranking de nota. Só o organizador recebe —
+   * pra galera a nota continua invisível, senão vira ranking social.
+   */
+  ranking?: Map<string, number>;
+  /** Quem entra na próxima partida — o "▶" do bot. */
+  nextUpIds?: Set<string>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const hidden = players.length - COLLAPSED;
@@ -57,7 +66,12 @@ export function Queue({
                   }`}
                 >
                 <span className="font-display tnum text-muted w-5 text-center text-base font-bold">
-                  {i + 1}
+                  {/* ▶ = entra na próxima, igual ao bot */}
+                  {nextUpIds?.has(p.id) ? (
+                    <span className="text-accent">▶</span>
+                  ) : (
+                    i + 1
+                  )}
                 </span>
                 <span
                   className={`font-display flex-1 truncate text-base font-semibold tracking-wide uppercase ${
@@ -66,6 +80,19 @@ export function Queue({
                 >
                   {isMe ? "você" : p.name}
                 </span>
+                {/* nota e ranking: só o organizador vê */}
+                {ranking && (
+                  <span className="tnum text-muted/70 text-sm">
+                    #{ranking.get(p.id) ?? "—"} · {p.rating.toFixed(1)}
+                  </span>
+                )}
+                {/* espera em rodadas, não em relógio: é assim que a
+                    galera reclama, e é o que a fila usa pra desempatar */}
+                {p.roundsWaiting > 0 && (
+                  <span className="tnum text-muted/70 text-sm">
+                    fora {p.roundsWaiting}
+                  </span>
+                )}
                 <span className="tnum text-muted text-sm">
                   {p.gamesPlayed} {p.gamesPlayed === 1 ? "jogo" : "jogos"}
                 </span>
@@ -75,6 +102,12 @@ export function Queue({
             );
           })}
         </ol>
+      )}
+
+      {ranking && players.length > 0 && (
+        <p className="text-muted/60 mt-2 px-3 text-xs">
+          #ranking · nota — só você vê. ▶ entra na próxima.
+        </p>
       )}
 
       {hidden > 0 && (

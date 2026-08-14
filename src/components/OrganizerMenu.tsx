@@ -17,7 +17,9 @@ import type { LiveState } from "@/lib/db";
 export function OrganizerMenu({
   status,
   busy,
+  canRebalance,
   onCheckIns,
+  onRebalance,
   onEndNight,
   onReopen,
   onReset,
@@ -25,7 +27,10 @@ export function OrganizerMenu({
 }: {
   status: LiveState["status"];
   busy: boolean;
+  /** só faz sentido com partida em quadra */
+  canRebalance: boolean;
   onCheckIns: () => void;
+  onRebalance: () => void;
   onEndNight: () => void;
   onReopen: () => void;
   onReset: () => void;
@@ -62,6 +67,23 @@ export function OrganizerMenu({
           >
             <span>✅</span> Check-in de outros
           </button>
+
+          {/*
+            Refaz os DOIS times do zero, ignorando quem está segurando a
+            quadra. A fila continua mandando em quem entra (quem jogou
+            menos), e a nota decide os lados — é o "vamos zerar e montar
+            times parelhos" de quando a noite vicia.
+          */}
+          {canRebalance && (
+            <button
+              type="button"
+              onClick={onRebalance}
+              disabled={busy}
+              className={`${item} bg-surface-2 text-ink`}
+            >
+              <span>⚖️</span> Rebalancear os times
+            </button>
+          )}
 
           {ended ? (
             <button

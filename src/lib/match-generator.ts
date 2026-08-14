@@ -29,6 +29,52 @@ const OPPONENT_WEIGHT = 10;
  */
 const BALANCE_WEIGHT = 20;
 
+/**
+ * A NOTA NÃO FURA A FILA — nem por um jogo.
+ *
+ * O bot do Neto tem uma "janela" (`PESO_JOGOS_EXTRA`, core.py:31) que
+ * alcança quem está um jogo à frente quando isso equilibra melhor a
+ * partida. A gente testou e tirou: significa alguém que já jogou 4
+ * entrar no lugar de alguém que jogou 2, e justiça é a única coisa que
+ * a galera confere de cabeça. Uma partida desequilibrada acaba em 15
+ * minutos; um "ele jogou mais que eu e entrou na minha frente" dura a
+ * noite toda.
+ *
+ * O equilíbrio age onde não custa a vez de ninguém: entre os EMPATADOS
+ * em número de jogos. Com 25 pessoas e 6x6, esse grupo é grande quase
+ * sempre — é ali que a nota escolhe quem casa melhor com a força de
+ * quem está na quadra.
+ */
+/** Folga do pool de candidatos, pra não explodir a combinatória. */
+const POOL_SLACK = 8;
+/** Acima disso, desiste da busca exata e volta pro sorteio de candidatos. */
+const MAX_COMBOS = 20000;
+
+/** Quantas combinações de `k` em `n` — saturando, pra não estourar. */
+function countCombos(n: number, k: number): number {
+  if (k < 0 || k > n) return 0;
+  let out = 1;
+  for (let i = 0; i < k; i++) {
+    out = (out * (n - i)) / (i + 1);
+    if (out > MAX_COMBOS) return Infinity;
+  }
+  return Math.round(out);
+}
+
+/** Todas as combinações de `k` elementos de `items`. */
+function* combinations<T>(items: T[], k: number): Generator<T[]> {
+  const idx = Array.from({ length: k }, (_, i) => i);
+  if (k > items.length) return;
+  for (;;) {
+    yield idx.map((i) => items[i]);
+    let i = k - 1;
+    while (i >= 0 && idx[i] === items.length - k + i) i--;
+    if (i < 0) return;
+    idx[i]++;
+    for (let j = i + 1; j < k; j++) idx[j] = idx[j - 1] + 1;
+  }
+}
+
 const sumRating = (ps: SessionPlayer[]) => ps.reduce((t, p) => t + p.rating, 0);
 /** Divisões aleatórias testadas antes da busca local. */
 const CANDIDATES = 300;
@@ -82,6 +128,12 @@ export type Explanation = {
   firstOut: PickReason | null;
   /** true quando o corte caiu no meio de um empate. */
   tiebreakUsed: boolean;
+  /**
+   * Quantas pessoas entraram com mais jogos que o corte da fila.
+   * Tem que ser SEMPRE zero — é uma trava viva contra regressão, não
+   * um número pra mostrar.
+   */
+  extraGamesUsed: number;
 };
 
 export type GeneratorResult =
@@ -103,7 +155,7 @@ export type GeneratorResult =
 
 function queueKey(p: SessionPlayer): string {
   // nunca jogou vem antes de quem já jogou
-  return `${p.gamesPlayed}|${p.lastPlayedAt ?? ""}`;
+  return `${p.gamesPlayed}|${p.roundsWaiting}|${p.lastPlayedAt ?? ""}`;
 }
 
 /**
@@ -118,6 +170,9 @@ export function orderQueue(
 ): SessionPlayer[] {
   return players.slice().sort((a, b) => {
     if (a.gamesPlayed !== b.gamesPlayed) return a.gamesPlayed - b.gamesPlayed;
+
+    // quem está fora há mais rodadas vem antes
+    if (a.roundsWaiting !== b.roundsWaiting) return b.roundsWaiting - a.roundsWaiting;
 
     const at = a.lastPlayedAt ? Date.parse(a.lastPlayedAt) : -Infinity;
     const bt = b.lastPlayedAt ? Date.parse(b.lastPlayedAt) : -Infinity;
@@ -174,21 +229,23 @@ function pickFromQueue(
 ): { picked: SessionPlayer[]; bench: SessionPlayer[] } {
   if (needed <= 0) return { picked: [], bench: queue };
 
-  const boundaryKey = queueKey(queue[needed - 1]);
-  const start = queue.findIndex((p) => queueKey(p) === boundaryKey);
-  let end = start;
-  while (end + 1 < queue.length && queueKey(queue[end + 1]) === boundaryKey) end++;
+  // fronteira = quantos jogos tem o último que caberia pelo corte seco.
+  // Quem tem MENOS jogos que isso entra sempre; quem tem mais, nunca.
+  const fronteira = queue[needed - 1].gamesPlayed;
+  const certain = queue.filter((p) => p.gamesPlayed < fronteira);
+  const tier = queue.filter((p) => p.gamesPlayed === fronteira);
 
-  // o grupo empatado não cruza o corte: nada a decidir
-  if (end < needed) {
+  const k = needed - certain.length;
+  if (k <= 0) {
     return { picked: queue.slice(0, needed), bench: queue.slice(needed) };
   }
 
-  const certain = queue.slice(0, start);
-  const group = queue.slice(start, end + 1);
-  const k = needed - certain.length;
+  // o pool já vem na ordem da fila, então cortar a cauda descarta
+  // primeiro quem tem menos direito
+  const pool = tier.slice(0, k + POOL_SLACK);
+  const rank = new Map(queue.map((p, i) => [p.id, i]));
 
-  const cost = (sel: SessionPlayer[]) => {
+  const cost = (sel: SessionPlayer[]): [number, number] => {
     const all = [...certain, ...sel];
     let hits = 0;
     for (let i = 0; i < all.length; i++)
@@ -198,30 +255,42 @@ function pickFromQueue(
     for (const a of all)
       for (const b of against) opp += idx.opponents.get(pairKey(a.id, b.id)) ?? 0;
     // com o campeão na quadra, é aqui que a nota consegue equilibrar:
-    // escolher, entre os empatados, o grupo que melhor casa com a força dele
+    // escolher o grupo que melhor casa com a força dele
     const imbalance = against.length
       ? Math.abs(sumRating(all) - sumRating(against))
       : 0;
-    return (
-      hits * TEAMMATE_WEIGHT +
-      opp * OPPONENT_WEIGHT +
-      imbalance * BALANCE_WEIGHT
-    );
+    const main =
+      hits * TEAMMATE_WEIGHT + opp * OPPONENT_WEIGHT + imbalance * BALANCE_WEIGHT;
+    // empate no custo: fica com quem esperou mais
+    const priority = sel.reduce((t, p) => t + (rank.get(p.id) ?? 0), 0);
+    return [main, priority];
   };
 
-  let bestSel = group.slice(0, k);
+  const better = (a: [number, number], b: [number, number]) =>
+    a[0] !== b[0] ? a[0] < b[0] : a[1] < b[1];
+
+  let bestSel = pool.slice(0, k);
   let bestCost = cost(bestSel);
-  for (let n = 0; n < CANDIDATES && bestCost > 0; n++) {
-    const sel = shuffled(group, rand).slice(0, k);
-    const c = cost(sel);
-    if (c < bestCost) [bestSel, bestCost] = [sel, c];
+
+  if (countCombos(pool.length, k) <= MAX_COMBOS) {
+    // busca exata — é o que o bot faz, e nesse tamanho cabe
+    for (const sel of combinations(pool, k)) {
+      const c = cost(sel);
+      if (better(c, bestCost)) [bestSel, bestCost] = [sel, c];
+    }
+  } else {
+    // time grande demais: cai no sorteio de candidatos
+    for (let n = 0; n < CANDIDATES && bestCost[0] > 0; n++) {
+      const sel = shuffled(pool, rand).slice(0, k);
+      const c = cost(sel);
+      if (better(c, bestCost)) [bestSel, bestCost] = [sel, c];
+    }
   }
 
   const chosen = new Set(bestSel.map((p) => p.id));
   return {
-    picked: certain.concat(group.filter((p) => chosen.has(p.id))),
-    // a sobra do grupo volta pra fila na ordem original
-    bench: group.filter((p) => !chosen.has(p.id)).concat(queue.slice(end + 1)),
+    picked: certain.concat(queue.filter((p) => chosen.has(p.id))),
+    bench: queue.filter((p) => p.gamesPlayed >= fronteira && !chosen.has(p.id)),
   };
 }
 
@@ -344,18 +413,36 @@ export function generateNextMatch(input: GeneratorInput): GeneratorResult {
     needed > 0 && bench.length > 0 && queueKey(bench[0]) === boundaryKey;
   const inTieGroup = (p: SessionPlayer) => tiebreakUsed && queueKey(p) === boundaryKey;
 
+  // trava viva: nenhum escolhido pode ter mais jogos que o corte
+  const cut = needed > 0 ? queue[needed - 1].gamesPlayed : 0;
+  const extraGamesUsed = picked.filter((p) => p.gamesPlayed > cut).length;
+
   // ── divisão em times ──────────────────────────────────────
   let bestA = preA.concat(picked.slice(0, slotsA));
   let bestB = preB.concat(picked.slice(slotsA));
   let bestCost = scoreSplit(bestA, bestB, idx);
 
   if (slotsA > 0 && slotsB > 0) {
-    for (let n = 0; n < CANDIDATES && bestCost > 0; n++) {
-      const mix = shuffled(picked, rand);
-      const a = preA.concat(mix.slice(0, slotsA));
-      const b = preB.concat(mix.slice(slotsA));
-      const c = scoreSplit(a, b, idx);
-      if (c < bestCost) [bestA, bestB, bestCost] = [a, b, c];
+    if (countCombos(picked.length, slotsA) <= MAX_COMBOS) {
+      // 12 pessoas em 6x6 dá 924 divisões: dá pra testar todas e ficar
+      // com a melhor de verdade, em vez da melhor de 300 sorteadas
+      const pickedIds = new Set<string>();
+      for (const sel of combinations(picked, slotsA)) {
+        pickedIds.clear();
+        for (const p of sel) pickedIds.add(p.id);
+        const a = preA.concat(sel);
+        const b = preB.concat(picked.filter((p) => !pickedIds.has(p.id)));
+        const c = scoreSplit(a, b, idx);
+        if (c < bestCost) [bestA, bestB, bestCost] = [a, b, c];
+      }
+    } else {
+      for (let n = 0; n < CANDIDATES && bestCost > 0; n++) {
+        const mix = shuffled(picked, rand);
+        const a = preA.concat(mix.slice(0, slotsA));
+        const b = preB.concat(mix.slice(slotsA));
+        const c = scoreSplit(a, b, idx);
+        if (c < bestCost) [bestA, bestB, bestCost] = [a, b, c];
+      }
     }
 
     // busca local: troca pares até não melhorar mais
@@ -417,6 +504,7 @@ export function generateNextMatch(input: GeneratorInput): GeneratorResult {
           }
         : null,
       tiebreakUsed,
+      extraGamesUsed,
     },
   };
 }

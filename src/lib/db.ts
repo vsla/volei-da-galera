@@ -67,6 +67,7 @@ export async function fetchState(): Promise<LiveState | null> {
       checkedInAt: (s?.checked_in_at as string) ?? null,
       gamesPlayed: (s?.games_played as number) ?? 0,
       lastPlayedAt: (s?.last_played_at as string) ?? null,
+      roundsWaiting: (s?.rounds_waiting as number) ?? 0,
       excluded: Boolean(s?.excluded),
     };
   });
@@ -334,6 +335,7 @@ export async function resetSession(sessionId: string) {
     .update({
       games_played: 0,
       last_played_at: null,
+      rounds_waiting: 0,
       checked_in_at: null,
       excluded: false,
     })
@@ -549,12 +551,18 @@ export async function finishMatch(
   const onCourt = new Set([...match.teamA, ...match.teamB].map((p) => p.id));
   const touched = outcome.players.filter((p) => onCourt.has(p.id));
 
+  // a espera de quem ficou de fora também andou: grava a fila junto
+  const waiting = outcome.players.filter(
+    (p) => !onCourt.has(p.id) && p.checkedInAt !== null && !p.excluded,
+  );
+
   await supabase.from("session_players").upsert(
-    touched.map((p) => ({
+    [...touched, ...waiting].map((p) => ({
       session_id: state.sessionId,
       player_id: p.id,
       games_played: p.gamesPlayed,
       last_played_at: p.lastPlayedAt,
+      rounds_waiting: p.roundsWaiting,
       checked_in_at: p.checkedInAt,
     })),
     { onConflict: "session_id,player_id" },
