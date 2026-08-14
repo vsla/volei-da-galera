@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+@theme {
+  /* ── superfícies ─────────────────────────────── */
+  --color-bg: #0a0f0d;
+  --color-surface: #131a17;
+  --color-surface-2: #1c2622;
+  --color-border: #2a3833;
+
+  /* ── texto ───────────────────────────────────── */
+  --color-ink: #f2f5f2;
+  --color-muted: #8a9a93;
+
+  /* ── ação e identidade ───────────────────────────
+     lime é reservado para AÇÃO do usuário e para
+     marcar VOCÊ. Nunca usar para time — senão o
+     usuário não distingue "meu time" de "meu botão". */
+  --color-accent: #c4f82a;
+  --color-accent-ink: #0a0f0d;
+
+  /* ── times ───────────────────────────────────── */
+  --color-team-a: #38e1ff;
+  --color-team-b: #ff7a5c;
+
+  /* ── ao vivo ─────────────────────────────────── */
+  --color-live: #ff3b30;
+
+  --font-display: var(--font-barlow), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --radius-card: 16px;
+  --radius-btn: 12px;
+}
+
+html {
+  color-scheme: dark;
+  /* nunca deixar a barra de rolagem "puxar" a página na praia */
+  overscroll-behavior-y: none;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  /* mínimo 16px em qualquer texto — mão com areia, no escuro */
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* números de placar sempre alinham */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* dot de "ao vivo" */
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+}
+.live-dot {
+  animation: live-pulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
