@@ -24,6 +24,10 @@ export type Champion = {
   streak: number;
 } | null;
 
+/** Quanto a nota sobe na vitória e desce na derrota. Igual ao bot. */
+export const RATING_STEP = 0.5;
+const clampRating = (v: number) => Math.min(10, Math.max(0, Number(v.toFixed(2))));
+
 export type MatchOutcome = {
   players: SessionPlayer[];
   champion: Champion;
@@ -47,15 +51,24 @@ export function applyMatchResult(input: {
 }): MatchOutcome {
   const { players, teamA, teamB, winner, championStays, maxStreak, at } = input;
 
-  const onCourt = new Set([...teamA, ...teamB].map((p) => p.id));
-  const updated = players.map((p) =>
-    onCourt.has(p.id)
-      ? { ...p, gamesPlayed: p.gamesPlayed + 1, lastPlayedAt: at }
-      : p,
-  );
-
   const winners = winner === "A" ? teamA : teamB;
   const losers = winner === "A" ? teamB : teamA;
+
+  const won = new Set(winners.map((p) => p.id));
+  const lost = new Set(losers.map((p) => p.id));
+
+  // Só quem estava em quadra NA HORA de registrar conta a partida.
+  // Quem foi substituído antes disso volta pra fila intacto — pra ela
+  // é como se nunca tivesse sido sorteada (mesma regra do bot).
+  const updated = players.map((p) => {
+    if (!won.has(p.id) && !lost.has(p.id)) return p;
+    return {
+      ...p,
+      gamesPlayed: p.gamesPlayed + 1,
+      lastPlayedAt: at,
+      rating: clampRating(p.rating + (won.has(p.id) ? RATING_STEP : -RATING_STEP)),
+    };
+  });
 
   // só continua a série quem já estava defendendo a quadra
   const streak = championStays && winner === "A" ? input.championStreak + 1 : 1;

@@ -7,10 +7,22 @@ import { CourtCard, EmptyCourt } from "./CourtCard";
 import { Queue } from "./Queue";
 import { BottomBar, type BottomState } from "./BottomBar";
 import { WhySheet } from "./WhySheet";
+import { PlayerSheet, type PlayerContext } from "./PlayerSheet";
+import { Highlights } from "./Highlights";
 import { generateNextMatch, orderQueue } from "@/lib/match-generator";
-import { checkIn, finishMatch, generateMatch, type LiveState } from "@/lib/db";
+import {
+  checkIn,
+  finishMatch,
+  generateMatch,
+  leaveSession,
+  movePlayer,
+  openVoting,
+  rejoinSession,
+  swapPlayer,
+  type LiveState,
+} from "@/lib/db";
 import { clearMe, isOrganizer, setOrganizer } from "@/lib/identity";
-import type { Team } from "@/lib/types";
+import type { SessionPlayer, Team } from "@/lib/types";
 
 const dateLabel = (iso: string) =>
   new Intl.DateTimeFormat("pt-BR", { weekday: "short", day: "numeric", month: "short" })
@@ -32,6 +44,10 @@ export function Lobby({
   const [why, setWhy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [screen, setScreen] = useState<"lobby" | "highlights">("lobby");
+  const [sheet, setSheet] = useState<
+    { player: SessionPlayer; context: PlayerContext } | null
+  >(null);
 
   const match = state.activeMatch;
   const onCourt = useMemo(
@@ -88,10 +104,21 @@ export function Lobby({
       navigator.vibrate?.(30);
     });
 
-  const doGenerate = () =>
+  const doGenerate = (replaceActive = false) =>
     run(async () => {
-      const r = await generateMatch(state);
-      if (!r.ok) setMsg(`Faltam ${r.missing} pra formar os times.`);
+      const r = await generateMatch(state, {
+        replaceActive,
+        forceReshuffle: replaceActive,
+        nonce: String(Date.now()),
+      });
+      if (!r.ok) {
+        setMsg(
+          r.error ??
+            (r.missing > 0
+              ? `Faltam ${r.missing} pra formar os times.`
+              : "Não deu pra gerar a partida."),
+        );
+      }
     });
 
   const doFinish = (winner: Team) =>
@@ -116,10 +143,55 @@ export function Lobby({
     }
   };
 
+  const gone = state.players.filter((p) => p.excluded && p.checkedInAt !== null);
+
+  const closeSheet = () => setSheet(null);
+
+  const doSwap = (outId: string, inId: string) =>
+    run(async () => {
+      if (!match) return;
+      await swapPlayer(match.id, outId, inId);
+      closeSheet();
+    });
+
+  const doMove = (playerId: string, team: Team) =>
+    run(async () => {
+      if (!match) return;
+      await movePlayer(match.id, playerId, team);
+      closeSheet();
+    });
+
+  const doLeave = (playerId: string, replacementId: string | null) =>
+    run(async () => {
+      await leaveSession(state, playerId, replacementId);
+      closeSheet();
+    });
+
+  const doRejoin = (playerId: string) =>
+    run(async () => {
+      await rejoinSession(state.sessionId, playerId);
+      closeSheet();
+    });
+
+  if (screen === "highlights") {
+    return (
+      <Highlights
+        state={state}
+        meId={meId}
+        isOrganizer={org}
+        onBack={() => setScreen("lobby")}
+        refresh={refresh}
+      />
+    );
+  }
+
   let bottom: BottomState;
-  if (!amCheckedIn) bottom = { kind: "check-in", onAction: doCheckIn };
+  if (state.status === "voting" || state.status === "closed")
+    bottom = { kind: "vote", onAction: () => setScreen("highlights") };
+  else if (!amCheckedIn) bottom = { kind: "check-in", onAction: doCheckIn };
   else if (amPlaying) bottom = { kind: "playing" };
-  else if (org && !match) bottom = { kind: "generate", onAction: doGenerate, disabled: busy };
+  else if (org && !match)
+    bottom = { kind: "generate", onAction: () => doGenerate(false), disabled: busy };
   else if (myQueuePos > 0) bottom = { kind: "in-queue", position: myQueuePos };
   else bottom = { kind: "check-in", onAction: doCheckIn };
 
@@ -148,6 +220,11 @@ export function Lobby({
             meId={meId}
             canFinish={org}
             onWin={doFinish}
+            onPlayerTap={
+              org
+                ? (player, team) => setSheet({ player, context: { where: "court", team } })
+                : undefined
+            }
           />
         ) : (
           <EmptyCourt missing={Math.max(0, missing)} />
@@ -160,7 +237,7 @@ export function Lobby({
         {org && match && (
           <button
             type="button"
-            onClick={doGenerate}
+            onClick={() => doGenerate(true)}
             disabled={busy}
             className="font-display text-muted hover:text-ink mx-4 mt-3 h-12 w-full text-sm tracking-widest uppercase disabled:opacity-40"
           >
@@ -168,7 +245,45 @@ export function Lobby({
           </button>
         )}
 
-        <Queue players={queue} meId={meId} onExplain={() => setWhy(true)} />
+        <Queue
+          players={queue}
+          meId={meId}
+          onExplain={() => setWhy(true)}
+          onPlayerTap={
+            org ? (player) => setSheet({ player, context: { where: "queue" } }) : undefined
+          }
+        />
+
+        {org && gone.length > 0 && (
+          <section className="px-4 pb-2">
+            <h2 className="font-display text-muted mb-2 text-sm tracking-widest uppercase">
+              Foram embora
+            </h2>
+            <ul className="flex flex-wrap gap-2">
+              {gone.map((p) => (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    onClick={() => setSheet({ player: p, context: { where: "gone" } })}
+                    className="font-display border-border text-muted h-10 rounded-full border px-3 text-sm tracking-wide uppercase"
+                  >
+                    {p.name}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {org && state.status !== "voting" && state.status !== "closed" && (
+          <button
+            type="button"
+            onClick={() => run(() => openVoting(state.sessionId))}
+            className="font-display text-muted hover:text-ink mx-4 h-12 w-full text-sm tracking-widest uppercase"
+          >
+            ⭐ encerrar a noite e abrir os destaques
+          </button>
+        )}
 
         <div className="text-muted flex justify-center gap-4 pb-4 text-xs">
           <button type="button" onClick={() => { clearMe(); location.reload(); }}>
@@ -183,6 +298,28 @@ export function Lobby({
       </main>
 
       <BottomBar state={bottom} />
+
+      {sheet && (
+        <PlayerSheet
+          player={sheet.player}
+          context={sheet.context}
+          queue={
+            sheet.context.where === "court"
+              ? queue
+              : // pra alguém da fila entrar, escolhe quem sai da quadra
+                [...(match?.teamA ?? []), ...(match?.teamB ?? [])]
+          }
+          onSwap={(otherId) =>
+            sheet.context.where === "court"
+              ? doSwap(sheet.player.id, otherId)
+              : doSwap(otherId, sheet.player.id)
+          }
+          onMove={(team) => doMove(sheet.player.id, team)}
+          onLeave={(replacementId) => doLeave(sheet.player.id, replacementId)}
+          onRejoin={() => doRejoin(sheet.player.id)}
+          onClose={closeSheet}
+        />
+      )}
 
       {why && (
         <WhySheet

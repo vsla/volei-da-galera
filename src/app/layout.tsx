@@ -36,7 +36,8 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="pt-BR" className={`${barlow.variable} ${inter.variable}`}>
-      <body className="font-body bg-bg text-ink">
+      {/* extensões de navegador injetam atributos no body antes da hidratação */}
+      <body className="font-body bg-bg text-ink" suppressHydrationWarning>
         <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col">
           {children}
         </div>

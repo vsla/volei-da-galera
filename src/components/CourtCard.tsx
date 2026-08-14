@@ -7,12 +7,14 @@ function TeamSide({
   streak,
   meId,
   labels,
+  onPlayerTap,
 }: {
   team: Team;
   players: SessionPlayer[];
   streak?: number;
   meId?: string | null;
   labels: Map<string, string>;
+  onPlayerTap?: (player: SessionPlayer, team: Team) => void;
 }) {
   const color = team === "A" ? "bg-team-a" : "bg-team-b";
   const text = team === "A" ? "text-team-a" : "text-team-b";
@@ -39,15 +41,29 @@ function TeamSide({
       <ul className="mt-2.5 grid grid-cols-3 gap-x-2 gap-y-1.5">
         {players.map((p) => {
           const isMe = p.id === meId;
-          return (
-            <li
-              key={p.id}
-              className={`font-display truncate text-base font-semibold tracking-wide uppercase ${
-                isMe ? "text-accent" : "text-ink"
-              }`}
-            >
+          const label = (
+            <>
               {labels.get(p.id) ?? p.name}
               {isMe && <span className="ml-1">◄</span>}
+            </>
+          );
+          const cls = `font-display truncate text-base font-semibold tracking-wide uppercase ${
+            isMe ? "text-accent" : "text-ink"
+          }`;
+
+          return (
+            <li key={p.id}>
+              {onPlayerTap ? (
+                <button
+                  type="button"
+                  onClick={() => onPlayerTap(p, team)}
+                  className={`${cls} decoration-border w-full min-h-[36px] text-left underline decoration-dotted underline-offset-4`}
+                >
+                  {label}
+                </button>
+              ) : (
+                <span className={`${cls} block`}>{label}</span>
+              )}
             </li>
           );
         })}
@@ -64,9 +80,12 @@ export function CourtCard({
   meId,
   canFinish = false,
   onWin,
+  onPlayerTap,
 }: {
   teamA: SessionPlayer[];
   teamB: SessionPlayer[];
+  /** Organizador toca num jogador pra trocar, mover ou marcar que foi embora. */
+  onPlayerTap?: (player: SessionPlayer, team: Team) => void;
   /** qual time está defendendo a quadra (null = rodada nova) */
   championTeam?: Team | null;
   streak?: number;
@@ -86,6 +105,7 @@ export function CourtCard({
         streak={championTeam === "A" ? streak : undefined}
         meId={meId}
         labels={labels}
+        onPlayerTap={onPlayerTap}
       />
 
       <div className="border-border flex items-center gap-3 border-y px-5 py-1.5">
@@ -102,6 +122,7 @@ export function CourtCard({
         streak={championTeam === "B" ? streak : undefined}
         meId={meId}
         labels={labels}
+        onPlayerTap={onPlayerTap}
       />
 
       {canFinish && (

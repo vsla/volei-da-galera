@@ -18,6 +18,7 @@ export function player(
     name: id,
     avatarUrl: null,
     isGuest: false,
+    rating: 5,
     checkedInAt: "2026-08-14T19:00:00Z",
     gamesPlayed: 0,
     lastPlayedAt: null,

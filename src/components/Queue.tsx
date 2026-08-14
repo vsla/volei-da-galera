@@ -10,11 +10,14 @@ export function Queue({
   players,
   meId,
   onExplain,
+  onPlayerTap,
 }: {
   /** já ordenada pela fila: menos jogos → há mais tempo sem jogar → sorteio */
   players: SessionPlayer[];
   meId?: string | null;
   onExplain?: () => void;
+  /** Organizador toca pra botar na quadra ou marcar que foi embora. */
+  onPlayerTap?: (player: SessionPlayer) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const hidden = players.length - COLLAPSED;
@@ -42,13 +45,17 @@ export function Queue({
         <ol className="flex flex-col gap-1">
           {shown.map((p, i) => {
             const isMe = p.id === meId;
+            const Row = onPlayerTap ? "button" : "div";
             return (
-              <li
-                key={p.id}
-                className={`flex items-center gap-3 rounded-[12px] px-3 py-3 ${
-                  isMe ? "bg-accent/10 ring-accent/40 ring-1" : "bg-surface"
-                }`}
-              >
+              <li key={p.id}>
+                <Row
+                  {...(onPlayerTap
+                    ? { type: "button" as const, onClick: () => onPlayerTap(p) }
+                    : {})}
+                  className={`flex w-full items-center gap-3 rounded-[12px] px-3 py-3 text-left ${
+                    isMe ? "bg-accent/10 ring-accent/40 ring-1" : "bg-surface"
+                  }`}
+                >
                 <span className="font-display tnum text-muted w-5 text-center text-base font-bold">
                   {i + 1}
                 </span>
@@ -62,7 +69,8 @@ export function Queue({
                 <span className="tnum text-muted text-sm">
                   {p.gamesPlayed} {p.gamesPlayed === 1 ? "jogo" : "jogos"}
                 </span>
-                {isMe && <span className="text-accent">◄</span>}
+                  {isMe && <span className="text-accent">◄</span>}
+                </Row>
               </li>
             );
           })}

@@ -342,6 +342,103 @@ describe("variedade", () => {
   });
 });
 
+describe("nota", () => {
+  it("equilibra os times na divisão de 12", () => {
+    // 6 fortes e 6 fracos: um sorteio cego juntaria os fortes de um lado
+    const players = [
+      ...Array.from({ length: 6 }, (_, i) => player(`forte${i}`, { rating: 9 })),
+      ...Array.from({ length: 6 }, (_, i) => player(`fraco${i}`, { rating: 2 })),
+    ];
+    const r = ok(generateNextMatch({ ...base, players, seed: "nota" }));
+    expect(r.explanation.ratingDiff).toBeLessThanOrEqual(2);
+  });
+
+  it("escolhe, entre os empatados, quem casa melhor com a força do campeão", () => {
+    // campeão fraco: deve puxar os fracos da fila, não os fortes
+    const champions = Array.from({ length: 6 }, (_, i) =>
+      player(`camp${i}`, { rating: 2, gamesPlayed: 2, lastPlayedAt: "2026-08-14T21:00:00Z" }),
+    );
+    // todos com 1 jogo e mesma espera: empate total, a nota decide
+    const fila = [
+      ...Array.from({ length: 6 }, (_, i) =>
+        player(`forte${i}`, { rating: 9, gamesPlayed: 1, lastPlayedAt: "2026-08-14T20:00:00Z" }),
+      ),
+      ...Array.from({ length: 6 }, (_, i) =>
+        player(`fraco${i}`, { rating: 2, gamesPlayed: 1, lastPlayedAt: "2026-08-14T20:00:00Z" }),
+      ),
+    ];
+    const r = ok(
+      generateNextMatch({
+        ...base,
+        players: [...champions, ...fila],
+        champion: { playerIds: ids(champions), streak: 1 },
+        seed: "nota2",
+      }),
+    );
+    const fracos = ids(r.teamB).filter((id) => id.startsWith("fraco")).length;
+    expect(fracos).toBeGreaterThanOrEqual(4);
+  });
+
+  it("a nota NUNCA fura a fila", () => {
+    // craque que já jogou muito não passa na frente de quem jogou pouco
+    const players = [
+      player("craque", { rating: 10, gamesPlayed: 9 }),
+      ...Array.from({ length: 12 }, (_, i) => player(`p${i}`, { rating: 5, gamesPlayed: 0 })),
+    ];
+    const r = ok(generateNextMatch({ ...base, players }));
+    expect([...ids(r.teamA), ...ids(r.teamB)]).not.toContain("craque");
+  });
+});
+
+describe("nota após a partida", () => {
+  const teamA = Array.from({ length: 6 }, (_, i) => player(`a${i}`, { rating: 5 }));
+  const teamB = Array.from({ length: 6 }, (_, i) => player(`b${i}`, { rating: 5 }));
+  const fora = player("fora", { rating: 5 });
+
+  const apply = (over: Partial<SessionPlayer> & { id: string }) =>
+    applyMatchResult({
+      players: [...teamA, ...teamB, fora].map((p) => (p.id === over.id ? { ...p, ...over } : p)),
+      teamA: teamA.map((p) => (p.id === over.id ? { ...p, ...over } : p)),
+      teamB: teamB.map((p) => (p.id === over.id ? { ...p, ...over } : p)),
+      winner: "A",
+      championStays: false,
+      championStreak: 0,
+      maxStreak: 2,
+      at: "2026-08-14T20:00:00Z",
+    }).players;
+
+  it("vencedor sobe 0.5 e perdedor desce 0.5", () => {
+    const after = apply({ id: "nada" });
+    expect(after.find((p) => p.id === "a0")!.rating).toBe(5.5);
+    expect(after.find((p) => p.id === "b0")!.rating).toBe(4.5);
+    expect(after.find((p) => p.id === "fora")!.rating).toBe(5);
+  });
+
+  it("a nota não passa de 10 nem cai abaixo de 0", () => {
+    expect(apply({ id: "a0", rating: 9.8 }).find((p) => p.id === "a0")!.rating).toBe(10);
+    expect(apply({ id: "b0", rating: 0.2 }).find((p) => p.id === "b0")!.rating).toBe(0);
+  });
+
+  it("quem foi substituído antes do fim não conta a partida nem muda de nota", () => {
+    // o substituído nem aparece nos times passados pro applyMatchResult
+    const substituido = player("saiu", { rating: 5, gamesPlayed: 3 });
+    const { players: after } = applyMatchResult({
+      players: [...teamA, ...teamB, substituido],
+      teamA,
+      teamB,
+      winner: "A",
+      championStays: false,
+      championStreak: 0,
+      maxStreak: 2,
+      at: "2026-08-14T20:00:00Z",
+    });
+    const s = after.find((p) => p.id === "saiu")!;
+    expect(s.gamesPlayed).toBe(3);
+    expect(s.rating).toBe(5);
+    expect(s.lastPlayedAt).toBeNull();
+  });
+});
+
 describe("nomes na quadra", () => {
   it('desambigua "João" de "João Victor"', () => {
     const labels = courtNames([

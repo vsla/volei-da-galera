@@ -20,6 +20,16 @@ const HISTORY_WINDOW = 3;
 /** Peso de repetir parceiro vs. repetir adversário. */
 const TEAMMATE_WEIGHT = 30;
 const OPPONENT_WEIGHT = 10;
+/**
+ * Peso por ponto de diferença de força entre os times.
+ *
+ * A nota NUNCA muda quem entra: a fila decide isso sozinha. Ela só age
+ * onde não há escolha a fazer em termos de justiça — no empate e na
+ * divisão dos times. Por isso o peso pode ser alto sem risco.
+ */
+const BALANCE_WEIGHT = 20;
+
+const sumRating = (ps: SessionPlayer[]) => ps.reduce((t, p) => t + p.rating, 0);
 /** Divisões aleatórias testadas antes da busca local. */
 const CANDIDATES = 300;
 
@@ -62,6 +72,10 @@ export type Explanation = {
   /** Pares que já jogaram juntos nas últimas rodadas. */
   repeatedTeammatePairs: number;
   repeatedOpponentPairs: number;
+  /** Soma de nota de cada time e a diferença entre elas. */
+  ratingA: number;
+  ratingB: number;
+  ratingDiff: number;
   /** Quem entrou, na ordem da fila. */
   picked: PickReason[];
   /** O primeiro que NÃO entrou. Responde "por que ele e não eu?". */
@@ -183,7 +197,16 @@ function pickFromQueue(
     let opp = 0;
     for (const a of all)
       for (const b of against) opp += idx.opponents.get(pairKey(a.id, b.id)) ?? 0;
-    return hits * TEAMMATE_WEIGHT + opp * OPPONENT_WEIGHT;
+    // com o campeão na quadra, é aqui que a nota consegue equilibrar:
+    // escolher, entre os empatados, o grupo que melhor casa com a força dele
+    const imbalance = against.length
+      ? Math.abs(sumRating(all) - sumRating(against))
+      : 0;
+    return (
+      hits * TEAMMATE_WEIGHT +
+      opp * OPPONENT_WEIGHT +
+      imbalance * BALANCE_WEIGHT
+    );
   };
 
   let bestSel = group.slice(0, k);
@@ -218,7 +241,13 @@ function scoreSplit(
     for (const b of teamB)
       opponentHits += idx.opponents.get(pairKey(a.id, b.id)) ?? 0;
 
-  return teammateHits * TEAMMATE_WEIGHT + opponentHits * OPPONENT_WEIGHT;
+  const imbalance = Math.abs(sumRating(teamA) - sumRating(teamB));
+
+  return (
+    teammateHits * TEAMMATE_WEIGHT +
+    opponentHits * OPPONENT_WEIGHT +
+    imbalance * BALANCE_WEIGHT
+  );
 }
 
 /**
@@ -372,6 +401,9 @@ export function generateNextMatch(input: GeneratorInput): GeneratorResult {
       gamesDiff: Math.max(...games) - Math.min(...games),
       repeatedTeammatePairs: repeats.repeatedTeammatePairs,
       repeatedOpponentPairs: repeats.repeatedOpponentPairs,
+      ratingA: Number(sumRating(bestA).toFixed(1)),
+      ratingB: Number(sumRating(bestB).toFixed(1)),
+      ratingDiff: Number(Math.abs(sumRating(bestA) - sumRating(bestB)).toFixed(1)),
       picked: picked.map((p) => ({
         player: p,
         games: p.gamesPlayed,

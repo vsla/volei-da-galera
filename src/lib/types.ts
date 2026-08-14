@@ -7,6 +7,8 @@ export type Player = {
   name: string;
   avatarUrl: string | null;
   isGuest: boolean;
+  /** 0..10, começa em 5, ±0.5 por partida. Igual ao bot. */
+  rating: number;
 };
 
 /** Jogador dentro de uma sessão: check-in e contadores da noite. */
