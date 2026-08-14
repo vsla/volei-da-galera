@@ -7,6 +7,7 @@ function TeamSide({
   streak,
   meId,
   labels,
+  ranking,
   onPlayerTap,
 }: {
   team: Team;
@@ -14,10 +15,14 @@ function TeamSide({
   streak?: number;
   meId?: string | null;
   labels: Map<string, string>;
+  /** Só o organizador recebe — com ele vêm a força do time e as notas. */
+  ranking?: Map<string, number>;
   onPlayerTap?: (player: SessionPlayer, team: Team) => void;
 }) {
   const color = team === "A" ? "bg-team-a" : "bg-team-b";
   const text = team === "A" ? "text-team-a" : "text-team-b";
+  // força = soma das notas, igual ao /lista do bot
+  const force = players.reduce((t, p) => t + p.rating, 0);
 
   return (
     <div className="relative py-4 pr-4 pl-5">
@@ -28,6 +33,11 @@ function TeamSide({
         <h3 className={`font-display text-lg font-extrabold tracking-widest uppercase ${text}`}>
           Time {team}
         </h3>
+        {ranking && (
+          <span className="font-display tnum text-muted text-sm tracking-widest uppercase">
+            força {force.toFixed(1)}
+          </span>
+        )}
         {typeof streak === "number" && streak > 0 && (
           <span className="text-accent ml-auto flex items-center gap-1">
             <Flame className="size-4" />
@@ -45,6 +55,12 @@ function TeamSide({
             <>
               {labels.get(p.id) ?? p.name}
               {isMe && <span className="ml-1">◄</span>}
+              {/* nota e jogos, só pro organizador */}
+              {ranking && (
+                <span className="tnum text-muted ml-1 text-xs font-normal">
+                  {p.rating.toFixed(1)}·{p.gamesPlayed}j
+                </span>
+              )}
             </>
           );
           const cls = `font-display truncate text-base font-semibold tracking-wide uppercase ${
@@ -79,11 +95,14 @@ export function CourtCard({
   streak,
   meId,
   canFinish = false,
+  ranking,
   onWin,
   onPlayerTap,
 }: {
   teamA: SessionPlayer[];
   teamB: SessionPlayer[];
+  /** Só o organizador recebe: liga a força do time e as notas. */
+  ranking?: Map<string, number>;
   /** Organizador toca num jogador pra trocar, mover ou marcar que foi embora. */
   onPlayerTap?: (player: SessionPlayer, team: Team) => void;
   /** qual time está defendendo a quadra (null = rodada nova) */
@@ -105,6 +124,7 @@ export function CourtCard({
         streak={championTeam === "A" ? streak : undefined}
         meId={meId}
         labels={labels}
+        ranking={ranking}
         onPlayerTap={onPlayerTap}
       />
 
@@ -122,6 +142,7 @@ export function CourtCard({
         streak={championTeam === "B" ? streak : undefined}
         meId={meId}
         labels={labels}
+        ranking={ranking}
         onPlayerTap={onPlayerTap}
       />
 

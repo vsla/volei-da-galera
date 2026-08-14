@@ -308,6 +308,7 @@ export function Lobby({
             streak={match.championStreak}
             meId={meId}
             canFinish={org}
+            ranking={ranking}
             onWin={doFinish}
             onPlayerTap={
               org
