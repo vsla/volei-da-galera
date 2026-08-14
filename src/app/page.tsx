@@ -1,88 +1,61 @@
 "use client";
 
-/**
- * TAREFA 1 — prova visual do lobby com dados fixos.
- * As tarefas 2 e 3 trocam este mock por Supabase + realtime;
- * os componentes abaixo já têm a forma final.
- */
-
-import { Header } from "@/components/Header";
-import { LiveStrip } from "@/components/LiveStrip";
-import { CourtCard } from "@/components/CourtCard";
-import { Queue } from "@/components/Queue";
-import { BottomBar } from "@/components/BottomBar";
-import type { SessionPlayer } from "@/lib/types";
-
-const mock = (name: string, gamesPlayed: number): SessionPlayer => ({
-  id: name,
-  name,
-  avatarUrl: null,
-  isGuest: false,
-  checkedInAt: new Date().toISOString(),
-  gamesPlayed,
-  lastPlayedAt: null,
-  excluded: false,
-});
-
-const TEAM_A = [
-  mock("Maria Gabrielly", 3),
-  mock("Pedro Augusto", 3),
-  mock("Fefa", 3),
-  mock("Baca", 3),
-  mock("Bia", 3),
-  mock("Tali", 3),
-];
-
-const TEAM_B = [
-  mock("Neto", 2),
-  mock("Ewerton", 2),
-  mock("Miguel", 2),
-  mock("Lenin Pastichi", 2),
-  mock("Álvaro Gabriel", 2),
-  mock("Ítalo Thiago", 2),
-];
-
-const QUEUE = [
-  mock("João", 0),
-  mock("Arthur Farias", 1),
-  mock("Suzana Rodrigues", 1),
-  mock("Mateus", 2),
-  mock("Guilherme", 2),
-  mock("Alisson", 2),
-  mock("Brenno", 2),
-  mock("Victor", 3),
-  mock("Leandro", 3),
-];
-
-const ME = "Ítalo Thiago";
-
-const dateLabel = new Intl.DateTimeFormat("pt-BR", {
-  weekday: "short",
-  day: "numeric",
-  month: "short",
-})
-  .format(new Date())
-  .replace(".", "");
+import { useEffect, useState } from "react";
+import { useLiveSession } from "@/hooks/useLiveSession";
+import { NamePicker } from "@/components/NamePicker";
+import { Lobby } from "@/components/Lobby";
+import { addGuest } from "@/lib/db";
+import { getMe, setMe } from "@/lib/identity";
 
 export default function Home() {
-  return (
-    <>
-      <Header dateLabel={dateLabel} isOrganizer />
-      <LiveStrip checkedIn={TEAM_A.length + TEAM_B.length + QUEUE.length} round={4} />
+  const { state, loading, stale, refresh } = useLiveSession();
+  const [meId, setMeId] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
 
-      <main className="flex-1 overflow-y-auto">
-        <CourtCard
-          teamA={TEAM_A}
-          teamB={TEAM_B}
-          championTeam="A"
-          streak={2}
-          meId={ME}
-          canFinish
-        />
-        <Queue players={QUEUE} meId={ME} />
+  // localStorage só existe no cliente — evita divergência com o SSR
+  useEffect(() => {
+    setMeId(getMe());
+    setReady(true);
+  }, []);
+
+  const pick = (playerId: string) => {
+    setMe(playerId);
+    setMeId(playerId);
+  };
+
+  if (!ready || loading) {
+    return (
+      <main className="flex flex-1 items-center justify-center">
+        <span className="text-4xl">🏐</span>
       </main>
+    );
+  }
 
-      <BottomBar state={{ kind: "playing" }} />
-    </>
-  );
+  if (!state) {
+    return (
+      <main className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+        <span className="text-4xl">🏐</span>
+        <p className="font-display text-muted text-lg tracking-widest uppercase">
+          Ainda não abriu a lista de hoje
+        </p>
+      </main>
+    );
+  }
+
+  // quem já escolheu o nome pula direto pro lobby
+  if (!meId || !state.players.some((p) => p.id === meId)) {
+    return (
+      <NamePicker
+        players={state.players}
+        onPick={pick}
+        onAddGuest={async (name) => {
+          const id = await addGuest(name);
+          await refresh();
+          if (id) pick(id);
+        }}
+      />
+    );
+  }
+
+  return <Lobby state={state} stale={stale} meId={meId} refresh={refresh} />;
 }
