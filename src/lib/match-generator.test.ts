@@ -170,7 +170,8 @@ describe("campeão", () => {
     expect(ids(r.teamA).sort()).toEqual(ids(champions).sort());
   });
 
-  it("no teto de vitórias o campeão cai e a rodada monta 12 novos", () => {
+  it("se o organizador baixar o teto no meio da noite, o campeão cai", () => {
+    // caminho defensivo: streak já estourado quando maxStreak muda de 3 pra 2
     const r = ok(
       generateNextMatch({
         ...base,
@@ -180,8 +181,44 @@ describe("campeão", () => {
       }),
     );
     expect(r.championStays).toBe(false);
-    // com 1 jogo contra 2, a fila inteira entra antes dos ex-campeões
     expect([...ids(r.teamA), ...ids(r.teamB)].every((id) => id.startsWith("fila"))).toBe(true);
+  });
+
+  it("completa o desafiante com quem acabou de perder quando a fila é curta", () => {
+    // início da noite: 14 pessoas. campeão (6) + 3 esperando + 5 que perderam
+    const esperando = Array.from({ length: 3 }, (_, i) => player(`chegou${i}`, { gamesPlayed: 0 }));
+    const perdedores = Array.from({ length: 5 }, (_, i) =>
+      player(`perdeu${i}`, { gamesPlayed: 1, lastPlayedAt: "2026-08-14T20:00:00Z" }),
+    );
+    const r = ok(
+      generateNextMatch({
+        ...base,
+        players: [...champions, ...esperando, ...perdedores],
+        champion: { playerIds: ids(champions), streak: 1 },
+      }),
+    );
+    const desafiante = ids(r.teamB);
+    // os 3 que chegaram entram todos; o resto completa com quem perdeu
+    for (const p of esperando) expect(desafiante).toContain(p.id);
+    expect(desafiante.filter((id) => id.startsWith("perdeu"))).toHaveLength(3);
+  });
+
+  it("resortear todo mundo ignora o campeão e monta 12 do zero", () => {
+    // campeão com muitos jogos, fila com poucos: no reshuffle, a fila entra
+    const r = ok(
+      generateNextMatch({
+        ...base,
+        players: [
+          ...champions.map((p) => ({ ...p, gamesPlayed: 5 })),
+          ...others,
+        ],
+        champion: { playerIds: ids(champions), streak: 1 },
+        forceReshuffle: true,
+      }),
+    );
+    expect(r.championStays).toBe(false);
+    const onCourt = [...ids(r.teamA), ...ids(r.teamB)];
+    expect(onCourt.every((id) => id.startsWith("fila"))).toBe(true);
   });
 
   it("completa o time do campeão se alguém foi embora", () => {
@@ -396,8 +433,8 @@ describe("simulação da noite", () => {
       });
 
       players = applied.players;
-      championStreak = applied.champion?.streak ?? 0;
       champion = applied.champion;
+      championStreak = applied.champion?.streak ?? 0;
     }
 
     const games = players.map((p) => p.gamesPlayed);
@@ -439,22 +476,37 @@ describe("rotação", () => {
   });
 
   it("primeira vitória vira campeão com streak 1", () => {
-    const { champion, championFell } = apply("A", false, 0);
-    expect(championFell).toBe(false);
+    const { champion, winnerDissolved } = apply("A", false, 0);
+    expect(winnerDissolved).toBe(false);
     expect(champion!.streak).toBe(1);
     expect(champion!.playerIds).toEqual(teamA.map((p) => p.id));
   });
 
-  it("segunda vitória seguida derruba o campeão", () => {
-    const { champion, championFell } = apply("A", true, 1);
-    expect(championFell).toBe(true);
-    expect(champion).toBeNull();
+  it("no teto, o vencedor é desfeito e o PERDEDOR fica na quadra", () => {
+    const { champion, winnerDissolved, leaving } = apply("A", true, 1);
+    expect(winnerDissolved).toBe(true);
+    // quem ganhou 2x vai pro fim da fila
+    expect(leaving.map((p) => p.id)).toEqual(teamA.map((p) => p.id));
+    // quem perdeu segura a quadra, com a série zerada
+    expect(champion!.playerIds).toEqual(teamB.map((p) => p.id));
+    expect(champion!.streak).toBe(0);
   });
 
   it("desafiante que ganha vira campeão com streak 1", () => {
-    const { champion, championFell } = apply("B", true, 1);
-    expect(championFell).toBe(false);
+    const { champion, winnerDissolved } = apply("B", true, 1);
+    expect(winnerDissolved).toBe(false);
     expect(champion!.streak).toBe(1);
     expect(champion!.playerIds).toEqual(teamB.map((p) => p.id));
+  });
+
+  it("sempre exatamente um time sai de quadra — nunca os dois", () => {
+    for (const [winner, stays, streak] of [
+      ["A", false, 0],
+      ["A", true, 1],
+      ["B", true, 1],
+    ] as const) {
+      const { leaving } = apply(winner, stays, streak);
+      expect(leaving).toHaveLength(6);
+    }
   });
 });

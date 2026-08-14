@@ -66,7 +66,7 @@ for (let round = 1; round <= ROUNDS; round++) {
     at: new Date(Date.UTC(2026, 7, 14, 19, round * 12)).toISOString(),
   });
 
-  if (applied.championFell) falls++;
+  if (applied.winnerDissolved) falls++;
   players = applied.players;
   champion = applied.champion;
   championStreak = applied.champion?.streak ?? 0;
@@ -101,6 +101,6 @@ console.log(`
   mais jogos:        ${max}
   menos jogos:       ${min}
   diferença:         ${max - min}   ${max - min <= 2 ? "✅" : "❌ acima de 2"}
-  quedas de campeão: ${falls}
+  vencedor desfeito: ${falls}
   dupla mais repetida: ${maxTogether}x  ·  média por dupla: ${avgTogether.toFixed(2)}x
 `);

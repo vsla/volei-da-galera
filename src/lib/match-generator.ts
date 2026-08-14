@@ -37,6 +37,14 @@ export type GeneratorInput = {
   locked?: LockedPlayer[];
   /** Tirados do sorteio pelo organizador (machucou, foi comer). */
   excluded?: string[];
+  /**
+   * Ignora o campeão e remonta os dois times do zero.
+   *
+   * É o "resortear todo mundo" de quando a noite já encheu e os times
+   * ficaram viciados. Quem estava esperando há mais tempo entra primeiro,
+   * então quem estava na quadra tende a sair — sem regra especial.
+   */
+  forceReshuffle?: boolean;
   seed: string;
 };
 
@@ -260,8 +268,10 @@ export function generateNextMatch(input: GeneratorInput): GeneratorResult {
   );
   const byId = new Map(eligible.map((p) => [p.id, p]));
 
-  // O campeão só fica enquanto não bateu o teto de vitórias seguidas.
-  const championStays = champion !== null && champion.streak < maxStreak;
+  // O campeão só fica enquanto não bateu o teto — e enquanto o
+  // organizador não pedir pra remontar tudo.
+  const championStays =
+    !input.forceReshuffle && champion !== null && champion.streak < maxStreak;
 
   // ── quem já tem lugar garantido ───────────────────────────
   const preA: SessionPlayer[] = [];
