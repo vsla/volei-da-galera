@@ -1,16 +1,18 @@
 import { Flame } from "lucide-react";
-import { shortName, type SessionPlayer, type Team } from "@/lib/types";
+import { courtNames, type SessionPlayer, type Team } from "@/lib/types";
 
 function TeamSide({
   team,
   players,
   streak,
   meId,
+  labels,
 }: {
   team: Team;
   players: SessionPlayer[];
   streak?: number;
   meId?: string | null;
+  labels: Map<string, string>;
 }) {
   const color = team === "A" ? "bg-team-a" : "bg-team-b";
   const text = team === "A" ? "text-team-a" : "text-team-b";
@@ -44,7 +46,7 @@ function TeamSide({
                 isMe ? "text-accent" : "text-ink"
               }`}
             >
-              {shortName(p.name)}
+              {labels.get(p.id) ?? p.name}
               {isMe && <span className="ml-1">◄</span>}
             </li>
           );
@@ -73,6 +75,9 @@ export function CourtCard({
   canFinish?: boolean;
   onWin?: (team: Team) => void;
 }) {
+  // desambigua "João" de "João Victor" dentro da quadra
+  const labels = courtNames([...teamA, ...teamB]);
+
   return (
     <section className="bg-surface border-border mx-4 mt-4 overflow-hidden rounded-[16px] border">
       <TeamSide
@@ -80,6 +85,7 @@ export function CourtCard({
         players={teamA}
         streak={championTeam === "A" ? streak : undefined}
         meId={meId}
+        labels={labels}
       />
 
       <div className="border-border flex items-center gap-3 border-y px-5 py-1.5">
@@ -95,6 +101,7 @@ export function CourtCard({
         players={teamB}
         streak={championTeam === "B" ? streak : undefined}
         meId={meId}
+        labels={labels}
       />
 
       {canFinish && (
