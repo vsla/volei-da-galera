@@ -463,6 +463,22 @@ export async function fetchHighlightDays(): Promise<HighlightDay[]> {
   return [...byDay.values()];
 }
 
+/**
+ * Quem já votou — só isso, nunca em quem.
+ *
+ * Passa pela `highlight_voters` (migration 0009), que devolve `voter_id`
+ * e a contagem, sem o votado. É o que o organizador precisa pra saber
+ * quem cutucar, sem que ninguém consiga cruzar voto com votante.
+ */
+export async function fetchVoters(sessionId: string): Promise<Map<string, number>> {
+  const { data } = await supabase.rpc("highlight_voters", {
+    p_session_id: sessionId,
+  });
+  return new Map(
+    ((data ?? []) as Row[]).map((r) => [r.voter_id as string, Number(r.votes ?? 0)]),
+  );
+}
+
 export async function myVotes(sessionId: string, voterId: string): Promise<string[]> {
   const { data } = await supabase
     .from("highlight_votes")

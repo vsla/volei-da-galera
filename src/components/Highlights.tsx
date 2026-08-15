@@ -7,6 +7,7 @@ import {
   castVotes,
   closeVoting,
   fetchHighlights,
+  fetchVoters,
   myVotes,
   VOTES_PER_PLAYER,
   type HighlightResult,
@@ -37,9 +38,18 @@ export function Highlights({
   const [result, setResult] = useState<HighlightResult | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const [voters, setVoters] = useState<Map<string, number> | null>(null);
+
   const candidates = state.players
     .filter((p) => p.checkedInAt !== null && p.id !== meId)
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+
+  const checkedIn = state.players.filter((p) => p.checkedInAt !== null);
+  const missing = voters
+    ? checkedIn
+        .filter((p) => !voters.has(p.id))
+        .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+    : [];
 
   useEffect(() => {
     myVotes(state.sessionId, meId).then((ids) => {
@@ -54,6 +64,16 @@ export function Highlights({
     if (state.status !== "closed") return;
     fetchHighlights(state.sessionId, state.players).then(setResult);
   }, [state.status, state.sessionId, state.players]);
+
+  // atualiza sozinho enquanto a votação corre: quem cutuca não fica
+  // recarregando a página pra ver se caiu mais um
+  useEffect(() => {
+    if (!isOrganizer) return;
+    const load = () => fetchVoters(state.sessionId).then(setVoters).catch(() => {});
+    load();
+    const t = setInterval(load, 10000);
+    return () => clearInterval(t);
+  }, [isOrganizer, state.sessionId, voted]);
 
   const toggle = (id: string) =>
     setPicked((cur) =>
@@ -165,6 +185,26 @@ export function Highlights({
       <p className="font-display tnum text-muted mt-4 text-center tracking-widest">
         {picked.length} / {VOTES_PER_PLAYER}
       </p>
+
+      {/* quem falta votar — só o organizador, e só QUEM votou, nunca
+          em quem (a lista vem da highlight_voters, migration 0009) */}
+      {isOrganizer && voters && (
+        <section className="bg-surface border-border mt-6 rounded-[12px] border px-3 py-3">
+          <h2 className="font-display text-muted mb-2 text-sm font-bold tracking-widest uppercase">
+            Votação · {voters.size} de {checkedIn.length}
+          </h2>
+          {missing.length === 0 ? (
+            <p className="text-accent text-sm">Todo mundo votou.</p>
+          ) : (
+            <>
+              <p className="text-muted mb-1.5 text-sm">Falta votar:</p>
+              <p className="font-display text-ink text-base font-semibold tracking-wide uppercase">
+                {missing.map((p) => p.name).join(" · ")}
+              </p>
+            </>
+          )}
+        </section>
+      )}
 
       <div className="sticky bottom-0 mt-6 flex flex-col gap-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         <button
