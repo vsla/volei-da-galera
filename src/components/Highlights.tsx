@@ -25,12 +25,15 @@ export function Highlights({
   meId,
   isOrganizer,
   onBack,
+  onSwitchMe,
   refresh,
 }: {
   state: LiveState;
   meId: string;
   isOrganizer: boolean;
   onBack: () => void;
+  /** Trocar de pessoa, quando o celular está logado como outro. */
+  onSwitchMe: () => void;
   refresh: () => Promise<void>;
 }) {
   const [picked, setPicked] = useState<string[]>([]);
@@ -44,6 +47,7 @@ export function Highlights({
     .filter((p) => p.checkedInAt !== null && p.id !== meId)
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
+  const meName = state.players.find((p) => p.id === meId)?.name;
   const checkedIn = state.players.filter((p) => p.checkedInAt !== null);
   const missing = voters
     ? checkedIn
@@ -78,7 +82,10 @@ export function Highlights({
     return () => clearInterval(t);
   }, [isOrganizer, state.sessionId, voted]);
 
-  const toggle = (id: string) =>
+  const toggle = (id: string) => {
+    // mexeu na seleção, o que está na tela deixou de ser o que está no
+    // banco — o botão volta a dizer "votar", não "voto salvo ✓"
+    setVoted(false);
     setPicked((cur) =>
       cur.includes(id)
         ? cur.filter((x) => x !== id)
@@ -86,6 +93,7 @@ export function Highlights({
           ? cur
           : [...cur, id],
     );
+  };
 
   // ── resultado ──────────────────────────────────────────────
   if (state.status === "closed") {
@@ -150,7 +158,26 @@ export function Highlights({
       <h1 className="font-display text-ink text-center text-2xl font-extrabold tracking-widest uppercase">
         ⭐ Destaques do dia
       </h1>
-      <p className="text-muted mt-3 mb-6 text-center">
+
+      {/*
+        Quem você é, antes da lista.
+        Esta tela esconde você mesmo — então, se a identidade estiver
+        errada, o sintoma é "fulano sumiu da lista", e a pessoa vota a
+        noite inteira no lugar de outra. Aconteceu de verdade.
+      */}
+      <button
+        type="button"
+        onClick={onSwitchMe}
+        className="bg-surface border-border mx-auto mt-4 flex max-w-full items-center gap-2 rounded-full border px-4 py-2"
+      >
+        <span className="text-muted text-sm">Votando como</span>
+        <span className="font-display text-accent truncate text-base font-bold tracking-wide uppercase">
+          {meName ?? "?"}
+        </span>
+        <span className="text-muted text-xs underline">trocar</span>
+      </button>
+
+      <p className="text-muted mt-4 mb-6 text-center">
         Escolha até {VOTES_PER_PLAYER}. Jogada, resenha, disposição, evolução —
         o que você quiser.
       </p>
@@ -209,7 +236,9 @@ export function Highlights({
         </section>
       )}
 
-      <div className="sticky bottom-0 mt-6 flex flex-col gap-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+      {/* fundo sólido: sem ele a lista passava POR BAIXO do botão e
+          ficava ilegível (o -mx-4 px-4 estica o fundo até as bordas) */}
+      <div className="bg-bg sticky bottom-0 -mx-4 mt-6 flex flex-col gap-2 px-4 pt-3 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         <button
           type="button"
           disabled={busy || picked.length === 0}

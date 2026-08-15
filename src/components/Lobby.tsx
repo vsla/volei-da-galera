@@ -329,6 +329,10 @@ export function Lobby({
         meId={meId}
         isOrganizer={org}
         onBack={() => setScreen("lobby")}
+        onSwitchMe={() => {
+          clearMe();
+          location.reload();
+        }}
         refresh={refresh}
       />
     );
@@ -359,6 +363,11 @@ export function Lobby({
       <Header
         dateLabel={dateLabel(state.date)}
         isOrganizer={org}
+        meName={me?.name}
+        onSwitchMe={() => {
+          clearMe();
+          location.reload();
+        }}
         onOpenEdit={() => setMenu(true)}
         onOpenHistory={() => setHistory(true)}
       />
@@ -471,10 +480,9 @@ export function Lobby({
 
         {/* ações de organizador moram na engrenagem, não no scroll da fila */}
 
+        {/* o "não é você?" saiu daqui: agora fica no header, junto do
+            seu nome, que é onde alguém repara antes de votar errado */}
         <div className="text-muted flex justify-center gap-4 pb-4 text-xs">
-          <button type="button" onClick={() => { clearMe(); location.reload(); }}>
-            não é você?
-          </button>
           {!org && (
             <button type="button" onClick={() => setAskOrg(true)}>
               sou organizador
