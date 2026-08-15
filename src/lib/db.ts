@@ -470,12 +470,18 @@ export async function fetchHighlightDays(): Promise<HighlightDay[]> {
  * e a contagem, sem o votado. É o que o organizador precisa pra saber
  * quem cutucar, sem que ninguém consiga cruzar voto com votante.
  */
-export async function fetchVoters(sessionId: string): Promise<Map<string, number>> {
-  const { data } = await supabase.rpc("highlight_voters", {
+export async function fetchVoters(
+  sessionId: string,
+): Promise<Map<string, number> | null> {
+  const { data, error } = await supabase.rpc("highlight_voters", {
     p_session_id: sessionId,
   });
+  // devolve null, NÃO um mapa vazio: sem a função no banco, vazio seria
+  // lido como "ninguém votou" e a tela cobraria voto de quem já votou.
+  // Informação errada é pior que informação ausente.
+  if (error || !data) return null;
   return new Map(
-    ((data ?? []) as Row[]).map((r) => [r.voter_id as string, Number(r.votes ?? 0)]),
+    (data as Row[]).map((r) => [r.voter_id as string, Number(r.votes ?? 0)]),
   );
 }
 

@@ -69,7 +69,10 @@ export function Highlights({
   // recarregando a página pra ver se caiu mais um
   useEffect(() => {
     if (!isOrganizer) return;
-    const load = () => fetchVoters(state.sessionId).then(setVoters).catch(() => {});
+    const load = () =>
+      fetchVoters(state.sessionId)
+        .then((v) => v && setVoters(v))
+        .catch(() => {});
     load();
     const t = setInterval(load, 10000);
     return () => clearInterval(t);
