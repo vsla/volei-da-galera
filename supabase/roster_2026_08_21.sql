@@ -1,92 +1,65 @@
--- Lista da sexta 21/08/2026 — Prainha ZN (24 pessoas)
+-- Sexta 21/08/2026 — Prainha ZN
 --
--- Idempotente: pode rodar de novo sem duplicar.
--- Rode no SQL Editor do Supabase DEPOIS de habilitar o login anônimo.
+-- RESET + lista da noite. Rode no SQL Editor do Supabase (só ele passa
+-- por cima da RLS da 0014). Pode rodar de novo: o resultado é sempre o
+-- mesmo estado final.
 --
--- Os "convidados" (is_guest) são os que vieram com alguém: o nome guarda
--- o anfitrião entre parênteses de propósito, porque é assim que a galera
--- vai procurar na tela — e porque desempata "Guilherme" e "João", que já
--- existem como habituais.
+-- ⚠️ O QUE ISSO APAGA, do banco inteiro:
+--    · as 9 partidas e os 108 registros de escalação do playtest de 14/08
+--    · as duas sessões (14/08 e 21/08) e os 25 check-ins delas
+--    · os 39 jogadores cadastrados e a nota de cada um (todo mundo
+--      recomeça em 5, como no bot)
+--    A pelada `prainha-zn` em si fica de pé, com o join_code PRAINHA.
+
+begin;
 
 -- ─────────────────────────────────────────────────────────────
--- 1. Nomes que mudaram desde o seed (mantém o id, e com ele a nota
---    e o histórico da pessoa)
+-- 1. Zera. A ordem é filho → pai; players leva o resto por cascade.
 -- ─────────────────────────────────────────────────────────────
-update players set name = 'Amanda Lays'     where name = 'Amanda Lavs';
-update players set name = 'Talisson Mendes' where name = 'Tali';
-update players set is_guest = false         where name = 'Caio César';
+delete from highlight_votes;
+delete from match_players;
+delete from matches;
+delete from session_players;
+delete from sessions;
+delete from pelada_members;
+delete from players;
 
 -- ─────────────────────────────────────────────────────────────
--- 2. Os 16 habituais
+-- 2. Os 24 de hoje, na ordem da lista do grupo.
+--    Quem veio com alguém mantém o anfitrião entre parênteses: é
+--    assim que procuram na tela, e é o que separa os dois Joões.
 -- ─────────────────────────────────────────────────────────────
-insert into players (name, is_guest)
-select v.name, false
-from (values
-  ('Anderson Nogueira'), ('Caio César'),      ('Amanda Lays'),     ('Talisson Mendes'),
-  ('Fernanda Paes'),     ('Matheus Paiva'),   ('Victor Alves'),    ('Antonela Carvalho'),
-  ('Arthur Farias'),     ('Suzana Rodrigues'),('Vinícius Lamarck'),('Lenin Pastichi'),
-  ('Ítalo Thiago'),      ('Miguel'),          ('Ewerton'),         ('Álvaro Gabriel')
-) as v(name)
-where not exists (select 1 from players p where p.name = v.name);
+insert into players (name)
+values
+  ('Anderson Nogueira'), ('Caio Cesar'),       ('Amanda Lays'),      ('Talisson Mendes'),
+  ('Fernanda Paes'),     ('Matheus Paiva'),    ('Victor Alves'),     ('Antonela Carvalho'),
+  ('Arthur Farias'),     ('Suzana Rodrigues'), ('Lamarck'),          ('Lenin Pastichi'),
+  ('Ítalo Thiago'),      ('Miguel'),           ('Ewerton'),          ('Álvaro Gabriel'),
+  ('João (Su)'),         ('Lauren (Alv)'),     ('Guilherme (Le)'),   ('Mesa 22 (Tali)'),
+  ('Yuri (Lenin)'),      ('Hugo (Caio)'),      ('João B (Ito)'),     ('Deyse (Ito)');
 
 -- ─────────────────────────────────────────────────────────────
--- 3. Os 8 convidados da noite
--- ─────────────────────────────────────────────────────────────
-insert into players (name, is_guest)
-select v.name, true
-from (values
-  ('João (Su)'),      ('Lauren (Alv)'), ('Guilherme (Le)'), ('Mesa 22 (Tali)'),
-  ('Yuri (Lenin)'),   ('Hugo (Caio)'),  ('João B (Ito)'),   ('Deyse (Ito)')
-) as v(name)
-where not exists (select 1 from players p where p.name = v.name);
-
--- ─────────────────────────────────────────────────────────────
--- 4. Todos viram membros da pelada (habitual = player, convidado = guest).
---    A nota nasce em 5 pra quem é novo; quem já era membro não é tocado.
+-- 3. Todos viram membros da pelada — é a lista de membros que vira a
+--    tela de check-in (`fetchState` lê `pelada_members`).
 -- ─────────────────────────────────────────────────────────────
 insert into pelada_members (pelada_id, player_id, role)
-select pl.id, p.id, case when p.is_guest then 'guest' else 'player' end
+select pl.id, p.id, 'player'
+  from peladas pl, players p
+ where pl.slug = 'prainha-zn';
+
+-- ─────────────────────────────────────────────────────────────
+-- 4. A noite de hoje, aberta e vazia: cada um faz o próprio check-in.
+-- ─────────────────────────────────────────────────────────────
+insert into sessions (pelada_id, date, status, team_size)
+select pl.id, date '2026-08-21', 'open', 6
   from peladas pl
-  join players p on p.name in (
-    'Anderson Nogueira','Caio César','Amanda Lays','Talisson Mendes',
-    'Fernanda Paes','Matheus Paiva','Victor Alves','Antonela Carvalho',
-    'Arthur Farias','Suzana Rodrigues','Vinícius Lamarck','Lenin Pastichi',
-    'Ítalo Thiago','Miguel','Ewerton','Álvaro Gabriel',
-    'João (Su)','Lauren (Alv)','Guilherme (Le)','Mesa 22 (Tali)',
-    'Yuri (Lenin)','Hugo (Caio)','João B (Ito)','Deyse (Ito)'
-  )
- where pl.slug = 'prainha-zn'
-on conflict (pelada_id, player_id) do nothing;
+ where pl.slug = 'prainha-zn';
 
--- ─────────────────────────────────────────────────────────────
--- 5. A sessão de hoje, aberta
--- ─────────────────────────────────────────────────────────────
-insert into sessions (pelada_id, date, status)
-select pl.id, date '2026-08-21', 'open'
-  from peladas pl
- where pl.slug = 'prainha-zn'
-on conflict (pelada_id, date) do update set status = 'open';
+commit;
 
--- ─────────────────────────────────────────────────────────────
--- 6. OPCIONAL — check-in dos 12 que já confirmaram (✅ na lista).
---    Descomente se quiser que eles já apareçam na fila; o resto do
---    pessoal faz o próprio check-in na praia, que é a graça do site.
--- ─────────────────────────────────────────────────────────────
--- insert into session_players (session_id, player_id, checked_in_at)
--- select s.id, p.id, now()
---   from sessions s
---   join peladas pl on pl.id = s.pelada_id and pl.slug = 'prainha-zn'
---   join players p on p.name in (
---     'Amanda Lays','Talisson Mendes','Suzana Rodrigues','Vinícius Lamarck',
---     'Lenin Pastichi','Ewerton','Álvaro Gabriel','João (Su)',
---     'Mesa 22 (Tali)','Yuri (Lenin)','João B (Ito)','Deyse (Ito)'
---   )
---  where s.date = date '2026-08-21'
--- on conflict (session_id, player_id) do update set checked_in_at = now();
-
--- Conferência
-select p.name, m.role, p.is_guest
-  from pelada_members m
-  join players p on p.id = m.player_id
-  join peladas pl on pl.id = m.pelada_id and pl.slug = 'prainha-zn'
- order by p.is_guest, p.name;
+-- Conferência: 24 nomes, nenhum check-in, uma sessão aberta.
+select (select count(*) from players)                        as jogadores,
+       (select count(*) from pelada_members)                 as membros,
+       (select count(*) from session_players)                as check_ins,
+       (select count(*) from matches)                        as partidas,
+       (select date::text || ' ' || status from sessions)    as sessao;
