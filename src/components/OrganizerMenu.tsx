@@ -18,8 +18,10 @@ export function OrganizerMenu({
   status,
   busy,
   canRebalance,
+  hasMatch,
   onCheckIns,
   onRebalance,
+  onSettings,
   onEndNight,
   onReopen,
   onReset,
@@ -27,10 +29,13 @@ export function OrganizerMenu({
 }: {
   status: LiveState["status"];
   busy: boolean;
-  /** só faz sentido com partida em quadra */
   canRebalance: boolean;
+  /** com partida em quadra o texto muda: rebalancear vs. nivelar */
+  hasMatch: boolean;
   onCheckIns: () => void;
   onRebalance: () => void;
+  /** painel da pelada: membros, papéis e regras */
+  onSettings: () => void;
   onEndNight: () => void;
   onReopen: () => void;
   onReset: () => void;
@@ -74,6 +79,11 @@ export function OrganizerMenu({
             menos), e a nota decide os lados — é o "vamos zerar e montar
             times parelhos" de quando a noite vicia.
           */}
+          {/*
+            Entre partidas ele vira "nivelar a noite": o pedido do
+            playtest 01 §11 — depois de umas rodadas, refazer os times do
+            zero considerando quem está fora há mais tempo.
+          */}
           {canRebalance && (
             <button
               type="button"
@@ -81,9 +91,19 @@ export function OrganizerMenu({
               disabled={busy}
               className={`${item} bg-surface-2 text-ink`}
             >
-              <span>⚖️</span> Rebalancear os times
+              <span>⚖️</span>{" "}
+              {hasMatch ? "Rebalancear os times" : "Nivelar a noite"}
             </button>
           )}
+
+          <button
+            type="button"
+            onClick={onSettings}
+            disabled={busy}
+            className={`${item} bg-surface-2 text-ink`}
+          >
+            <span>⚙️</span> Painel da pelada
+          </button>
 
           {ended ? (
             <button

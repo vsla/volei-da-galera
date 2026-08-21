@@ -2,13 +2,19 @@ import { Menu, Settings } from "lucide-react";
 
 export function Header({
   dateLabel,
+  peladaName,
   meName,
   isOrganizer = false,
   onOpenEdit,
   onOpenHistory,
   onSwitchMe,
+  onSwitchPelada,
 }: {
   dateLabel: string;
+  /** Em qual pelada você está — com várias, isso deixa de ser óbvio. */
+  peladaName?: string;
+  /** Sair pra lista de peladas. */
+  onSwitchPelada?: () => void;
   /**
    * Quem o app acha que você é.
    *
@@ -27,7 +33,15 @@ export function Header({
 }) {
   return (
     <header className="bg-bg/95 border-border sticky top-0 z-20 flex items-center gap-3 border-b px-4 py-3 backdrop-blur">
-      <span className="text-xl leading-none">🏐</span>
+      {/* a bola volta pra lista de peladas — o "logo" é a saída */}
+      <button
+        type="button"
+        onClick={onSwitchPelada}
+        aria-label="Trocar de pelada"
+        className="-ml-1 flex size-10 shrink-0 items-center justify-center text-xl leading-none"
+      >
+        🏐
+      </button>
 
       {meName ? (
         /* seu nome ocupa o lugar de honra: é o que precisa ser conferido */
@@ -49,8 +63,15 @@ export function Header({
         </h1>
       )}
 
-      <span className="font-display text-muted ml-auto shrink-0 text-sm tracking-wide uppercase">
-        {dateLabel}
+      <span className="ml-auto flex max-w-[40%] shrink-0 flex-col items-end">
+        {peladaName && (
+          <span className="font-display text-muted/70 max-w-full truncate text-xs tracking-wide uppercase">
+            {peladaName}
+          </span>
+        )}
+        <span className="font-display text-muted text-sm tracking-wide uppercase">
+          {dateLabel}
+        </span>
       </span>
       {onOpenHistory && (
         <button

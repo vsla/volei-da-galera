@@ -2,6 +2,7 @@
 
 import { Flame } from "lucide-react";
 import type { LiveState } from "@/lib/db";
+import { DEFAULT_TEAM_LABELS, type TeamLabels } from "@/lib/teams";
 import { courtNames, type SessionPlayer, type Team } from "@/lib/types";
 
 /**
@@ -25,12 +26,14 @@ export function FinishedCourt({
   meId,
   canStart,
   busy,
+  teamLabels = DEFAULT_TEAM_LABELS,
   onOpenNext,
 }: {
   last: NonNullable<LiveState["lastMatch"]>;
   championIds: string[];
   championStreak: number;
   meId?: string | null;
+  teamLabels?: TeamLabels;
   /** só o organizador monta a próxima */
   canStart: boolean;
   busy: boolean;
@@ -62,7 +65,7 @@ export function FinishedCourt({
           <h3
             className={`font-display text-lg font-extrabold tracking-widest uppercase ${text}`}
           >
-            Time {team}
+            {teamLabels[team]}
           </h3>
           {won && (
             <span className="font-display text-accent text-sm font-bold tracking-widest uppercase">
@@ -109,7 +112,7 @@ export function FinishedCourt({
           <Flame className="text-accent size-4 shrink-0" />
           <p className="text-ink text-sm">
             <span className="font-display font-bold tracking-widest uppercase">
-              Time {stayingTeam}
+              {teamLabels[stayingTeam]}
             </span>{" "}
             segura a quadra
             {championStreak > 0 && (

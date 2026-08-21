@@ -1,16 +1,27 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { listHighlightDays, longDate } from "@/lib/highlights-server";
+import { notFound } from "next/navigation";
+import { getPelada, listHighlightDays, longDate } from "@/lib/highlights-server";
 
-export const metadata: Metadata = {
-  title: "Destaques — Vôlei Prainha ZN",
-  description: "Todos os destaques, sexta a sexta.",
-};
+type Props = { params: Promise<{ slug: string }> };
 
 export const revalidate = 60;
 
-export default async function DestaquesPage() {
-  const days = await listHighlightDays();
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { slug } = await params;
+  const pelada = await getPelada(slug);
+  return {
+    title: `Destaques — ${pelada?.name ?? "Pelada"}`,
+    description: "Todos os destaques, pelada a pelada.",
+  };
+}
+
+export default async function DestaquesPage({ params }: Props) {
+  const { slug } = await params;
+  const pelada = await getPelada(slug);
+  if (!pelada) notFound();
+
+  const days = await listHighlightDays(pelada.id);
   const [ultimo, ...anteriores] = days;
 
   return (
@@ -18,7 +29,7 @@ export default async function DestaquesPage() {
       <h1 className="font-display text-ink text-center text-2xl font-extrabold tracking-widest uppercase">
         🏆 Destaques
       </h1>
-      <p className="text-muted mt-2 mb-8 text-center">Sexta a sexta, quem brilhou.</p>
+      <p className="text-muted mt-2 mb-8 text-center">{pelada.name}</p>
 
       {days.length === 0 ? (
         <p className="text-muted py-12 text-center">
@@ -30,11 +41,11 @@ export default async function DestaquesPage() {
         <>
           {/* a noite mais recente vem aberta, as outras viram lista */}
           <Link
-            href={`/destaques/${ultimo.date}`}
+            href={`/p/${slug}/destaques/${ultimo.date}`}
             className="bg-surface border-accent/40 block rounded-[16px] border p-5"
           >
             <p className="font-display text-accent text-sm tracking-widest uppercase">
-              última sexta
+              última pelada
             </p>
             <p className="text-muted mt-1 text-sm">{longDate(ultimo.date)}</p>
             <ul className="mt-4 flex flex-col gap-2">
@@ -58,7 +69,7 @@ export default async function DestaquesPage() {
                 {anteriores.map((d) => (
                   <li key={d.sessionId}>
                     <Link
-                      href={`/destaques/${d.date}`}
+                      href={`/p/${slug}/destaques/${d.date}`}
                       className="bg-surface border-border block rounded-[12px] border px-4 py-3"
                     >
                       <p className="text-muted text-sm">{longDate(d.date)}</p>
@@ -75,7 +86,7 @@ export default async function DestaquesPage() {
       )}
 
       <Link
-        href="/"
+        href={`/p/${slug}`}
         className="font-display text-muted mt-10 h-12 text-center text-sm tracking-widest uppercase"
       >
         voltar pra quadra

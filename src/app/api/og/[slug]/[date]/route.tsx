@@ -1,5 +1,5 @@
 import { ImageResponse } from "next/og";
-import { getHighlightDay, longDate } from "@/lib/highlights-server";
+import { getHighlightDay, getPelada, longDate } from "@/lib/highlights-server";
 
 export const runtime = "nodejs";
 
@@ -45,10 +45,11 @@ async function loadFont(): Promise<ArrayBuffer | null> {
  */
 export async function GET(
   req: Request,
-  { params }: { params: Promise<{ date: string }> },
+  { params }: { params: Promise<{ slug: string; date: string }> },
 ) {
-  const { date } = await params;
-  const day = await getHighlightDay(date);
+  const { slug, date } = await params;
+  const pelada = await getPelada(slug);
+  const day = pelada ? await getHighlightDay(pelada.id, date) : null;
 
   // ?nomes=a,b,c só em dev, pra ajustar o visual sem depender de votação
   const demo =
@@ -96,7 +97,7 @@ export async function GET(
               display: "flex",
             }}
           >
-            Vôlei Prainha ZN
+            {pelada?.name ?? "Vôlei da Galera"}
           </div>
         </div>
 
@@ -176,7 +177,7 @@ export async function GET(
             display: "flex",
           }}
         >
-          Toda sexta · Prainha ZN
+          {pelada?.name ?? "Vôlei da Galera"}
         </div>
       </div>
     ),

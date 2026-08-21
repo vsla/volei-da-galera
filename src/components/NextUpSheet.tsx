@@ -2,7 +2,8 @@
 
 import { Flame, X } from "lucide-react";
 import type { FinishSummary } from "@/lib/db";
-import { courtNames, type SessionPlayer, type Team } from "@/lib/types";
+import { DEFAULT_TEAM_LABELS, teamTitle, type TeamLabels } from "@/lib/teams";
+import { courtNames, type SessionPlayer } from "@/lib/types";
 
 /**
  * A tela entre uma partida e a outra.
@@ -23,11 +24,13 @@ export function NextUpSheet({
   teamB,
   missing,
   busy,
+  teamLabels = DEFAULT_TEAM_LABELS,
   onConfirm,
   onReshuffle,
   onClose,
 }: {
   summary: FinishSummary;
+  teamLabels?: TeamLabels;
   /** Placar da partida que acabou, quando alguém marcou. */
   score?: { a: number | null; b: number | null };
   /** Prévia da próxima partida. null quando ainda não dá pra formar. */
@@ -40,12 +43,9 @@ export function NextUpSheet({
   onReshuffle: () => void;
   onClose: () => void;
 }) {
-  const winnerLabel = `Time ${summary.winner}`;
-  const stayingTeam: Team = summary.winnerDissolved
-    ? summary.winner === "A"
-      ? "B"
-      : "A"
-    : summary.winner;
+  const winnerLabel = teamTitle(summary.winner, teamLabels);
+  // quem fica mantém o lado — a letra não muda porque alguém ganhou
+  const stayingTeam = summary.stayingTeam;
 
   const labels = courtNames([
     ...summary.staying,
@@ -105,7 +105,7 @@ export function NextUpSheet({
         <dl className="mb-4 flex flex-col gap-2">
           <div className="bg-surface-2 rounded-[12px] px-3 py-2.5">
             <dt className="font-display text-muted mb-1 text-sm tracking-widest uppercase">
-              Fica na quadra — Time {stayingTeam} da próxima
+              Fica na quadra — {teamLabels[stayingTeam]}, no mesmo lado
             </dt>
             <dd className="font-display text-ink text-base font-semibold tracking-wide uppercase">
               {summary.staying.length ? nameList(summary.staying) : "ninguém"}

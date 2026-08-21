@@ -8,6 +8,7 @@ import {
   type HighlightDay,
   type PlayedMatch,
 } from "@/lib/db";
+import { DEFAULT_TEAM_LABELS, type TeamLabels } from "@/lib/teams";
 import { courtNames, type SessionPlayer, type Team } from "@/lib/types";
 
 /**
@@ -35,7 +36,13 @@ const timeLabel = (iso: string | null) =>
       )
     : "";
 
-function MatchRow({ match }: { match: PlayedMatch }) {
+function MatchRow({
+  match,
+  teamLabels,
+}: {
+  match: PlayedMatch;
+  teamLabels: TeamLabels;
+}) {
   const labels = courtNames([...match.teamA, ...match.teamB]);
   const hasScore = match.scoreA !== null && match.scoreB !== null;
 
@@ -47,7 +54,7 @@ function MatchRow({ match }: { match: PlayedMatch }) {
         <span
           className={`font-display w-14 shrink-0 text-sm font-extrabold tracking-widest uppercase ${text}`}
         >
-          Time {team}
+          {teamLabels[team]}
         </span>
         <span className="font-display text-ink flex-1 text-sm tracking-wide uppercase">
           {players.map((p) => labels.get(p.id) ?? p.name).join(" · ")}
@@ -82,12 +89,19 @@ function MatchRow({ match }: { match: PlayedMatch }) {
 
 export function HistorySheet({
   sessionId,
+  peladaId,
   players,
+  teamLabels = DEFAULT_TEAM_LABELS,
+  onStats,
   onClose,
 }: {
   sessionId: string;
+  /** As outras noites são DESTA pelada, não do banco inteiro. */
+  peladaId: string;
   /** Os jogadores da noite, pra resolver os nomes sem nova consulta. */
   players: SessionPlayer[];
+  teamLabels?: TeamLabels;
+  onStats?: () => void;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<"hoje" | "peladas">("hoje");
@@ -100,8 +114,8 @@ export function HistorySheet({
 
   useEffect(() => {
     if (tab !== "peladas" || days) return;
-    fetchHighlightDays().then(setDays).catch(() => setDays([]));
-  }, [tab, days]);
+    fetchHighlightDays(peladaId).then(setDays).catch(() => setDays([]));
+  }, [tab, days, peladaId]);
 
   const tabClass = (active: boolean) =>
     `font-display h-11 flex-1 rounded-[10px] text-sm font-bold tracking-widest uppercase ${
@@ -149,7 +163,7 @@ export function HistorySheet({
             ) : (
               <ul className="flex flex-col gap-1.5">
                 {matches.map((m) => (
-                  <MatchRow key={m.id} match={m} />
+                  <MatchRow key={m.id} match={m} teamLabels={teamLabels} />
                 ))}
               </ul>
             )
@@ -177,6 +191,16 @@ export function HistorySheet({
             </ul>
           )}
         </div>
+
+        {onStats && (
+          <button
+            type="button"
+            onClick={onStats}
+            className="font-display border-border text-ink mt-3 h-12 w-full rounded-[12px] border text-sm tracking-widest uppercase"
+          >
+            📊 números da pelada
+          </button>
+        )}
       </div>
     </div>
   );

@@ -60,7 +60,7 @@ for (let round = 1; round <= ROUNDS; round++) {
     teamA: r.teamA,
     teamB: r.teamB,
     winner,
-    championStays: r.championStays,
+    holderTeam: r.holderTeam,
     championStreak,
     maxStreak: MAX_STREAK,
     at: new Date(Date.UTC(2026, 7, 14, 19, round * 12)).toISOString(),

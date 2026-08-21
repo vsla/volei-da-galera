@@ -85,8 +85,14 @@ export type GeneratorInput = {
   /** Todos os jogadores da sessão. Quem não fez check-in é ignorado. */
   players: SessionPlayer[];
   teamSize: number;
-  /** Time que está defendendo a quadra, se houver. */
-  champion: { playerIds: string[]; streak: number } | null;
+  /**
+   * Time que está defendendo a quadra, se houver.
+   *
+   * `team` é o LADO em que esse grupo está. Ele não muda porque o grupo
+   * ganhou (playtest 01 §5): quem fica, fica no mesmo lado da rede, e o
+   * desafiante entra no lado oposto.
+   */
+  champion: { playerIds: string[]; streak: number; team: Team } | null;
   maxStreak: number;
   history: PastMatch[];
   /** Fixados pelo organizador — entram e ficam no time indicado. */
@@ -101,6 +107,18 @@ export type GeneratorInput = {
    * então quem estava na quadra tende a sair — sem regra especial.
    */
   forceReshuffle?: boolean;
+  /**
+   * Teto de espera: quem está fora há `waitCap` rodadas entra na
+   * próxima, na frente dos empatados. `null`/ausente desliga.
+   *
+   * Playtest 01 §11: "acharam meio estranho alguns ficarem 3 rodadas
+   * fora". É consequência honesta da fila — quem jogou menos entra
+   * antes —, mas nada impede um teto, DESDE QUE ele fure só o
+   * desempate. Furar a contagem de jogos seria a "janela" que o
+   * `reasonable.md` §5 tirou de propósito: alguém com 4 jogos passando
+   * na frente de quem tem 2.
+   */
+  waitCap?: number | null;
   seed: string;
 };
 
@@ -139,12 +157,13 @@ export type Explanation = {
 export type GeneratorResult =
   | {
       ok: true;
-      /** Quando o campeão fica, ele é sempre o time A. */
       teamA: SessionPlayer[];
       teamB: SessionPlayer[];
       /** Fila, já ordenada. */
       bench: SessionPlayer[];
       championStays: boolean;
+      /** Em qual lado ficou quem estava segurando a quadra. */
+      holderTeam: Team | null;
       explanation: Explanation;
     }
   | { ok: false; missing: number; available: number };
@@ -226,6 +245,7 @@ function pickFromQueue(
   idx: HistoryIndex,
   against: SessionPlayer[],
   rand: () => number,
+  waitCap?: number | null,
 ): { picked: SessionPlayer[]; bench: SessionPlayer[] } {
   if (needed <= 0) return { picked: [], bench: queue };
 
@@ -233,11 +253,39 @@ function pickFromQueue(
   // Quem tem MENOS jogos que isso entra sempre; quem tem mais, nunca.
   const fronteira = queue[needed - 1].gamesPlayed;
   const certain = queue.filter((p) => p.gamesPlayed < fronteira);
-  const tier = queue.filter((p) => p.gamesPlayed === fronteira);
+  let tier = queue.filter((p) => p.gamesPlayed === fronteira);
 
-  const k = needed - certain.length;
+  let k = needed - certain.length;
   if (k <= 0) {
     return { picked: queue.slice(0, needed), bench: queue.slice(needed) };
+  }
+
+  /**
+   * Teto de espera: quem estourou entra antes dos empatados.
+   *
+   * Note ONDE isto age — dentro do `tier`, o grupo que tem exatamente os
+   * mesmos jogos. Ninguém perde a vez pra isso: o equilíbrio e a
+   * variedade é que passam a escolher entre os que sobraram.
+   */
+  const forced: SessionPlayer[] = [];
+  if (waitCap && waitCap > 0) {
+    for (const p of tier) {
+      if (forced.length >= k) break;
+      if (p.roundsWaiting >= waitCap) forced.push(p);
+    }
+    if (forced.length) {
+      const ids = new Set(forced.map((p) => p.id));
+      tier = tier.filter((p) => !ids.has(p.id));
+      k -= forced.length;
+    }
+  }
+
+  if (k <= 0) {
+    const chosen = new Set([...certain, ...forced].map((p) => p.id));
+    return {
+      picked: queue.filter((p) => chosen.has(p.id)),
+      bench: queue.filter((p) => !chosen.has(p.id)),
+    };
   }
 
   // o pool já vem na ordem da fila, então cortar a cauda descarta
@@ -246,7 +294,9 @@ function pickFromQueue(
   const rank = new Map(queue.map((p, i) => [p.id, i]));
 
   const cost = (sel: SessionPlayer[]): [number, number] => {
-    const all = [...certain, ...sel];
+    // quem entrou por direito (menos jogos) e quem entrou pelo teto de
+    // espera já estão dentro: o custo é da ESCOLHA que ainda resta
+    const all = [...certain, ...forced, ...sel];
     let hits = 0;
     for (let i = 0; i < all.length; i++)
       for (let j = i + 1; j < all.length; j++)
@@ -287,7 +337,7 @@ function pickFromQueue(
     }
   }
 
-  const chosen = new Set(bestSel.map((p) => p.id));
+  const chosen = new Set([...forced, ...bestSel].map((p) => p.id));
   return {
     picked: certain.concat(queue.filter((p) => chosen.has(p.id))),
     bench: queue.filter((p) => p.gamesPlayed >= fronteira && !chosen.has(p.id)),
@@ -382,8 +432,13 @@ export function generateNextMatch(input: GeneratorInput): GeneratorResult {
     taken.add(p.id);
   };
 
+  // quem segura a quadra fica no MESMO lado — a letra do time não muda
+  // porque o grupo ganhou (playtest 01 §5)
+  const holderTeam: Team | null = championStays ? champion.team : null;
+  const holderSide = holderTeam === "B" ? preB : preA;
+
   if (championStays) {
-    for (const id of champion.playerIds) claim(byId.get(id), preA);
+    for (const id of champion.playerIds) claim(byId.get(id), holderSide);
   }
   for (const l of locked) claim(byId.get(l.playerId), l.team === "A" ? preA : preB);
 
@@ -403,7 +458,15 @@ export function generateNextMatch(input: GeneratorInput): GeneratorResult {
 
   const idx = indexHistory(history);
   const rand = mulberry32(hashString(seed));
-  const { picked, bench } = pickFromQueue(queue, needed, idx, preA, rand);
+  // o equilíbrio mira em quem já está na quadra, seja qual for o lado
+  const { picked, bench } = pickFromQueue(
+    queue,
+    needed,
+    idx,
+    holderSide,
+    rand,
+    input.waitCap,
+  );
 
   // ── quem entrou por sorteio de empate ─────────────────────
   // O corte pode cair no meio de um grupo empatado. Marcamos o grupo
@@ -482,6 +545,7 @@ export function generateNextMatch(input: GeneratorInput): GeneratorResult {
     teamB: bestB,
     bench,
     championStays,
+    holderTeam,
     explanation: {
       minGames: Math.min(...games),
       maxGames: Math.max(...games),

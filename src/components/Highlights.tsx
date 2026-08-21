@@ -2,14 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { initials, type SessionPlayer } from "@/lib/types";
+import { initials } from "@/lib/types";
 import {
   castVotes,
   closeVoting,
   fetchHighlights,
   fetchVoters,
   myVotes,
-  VOTES_PER_PLAYER,
   type HighlightResult,
   type LiveState,
 } from "@/lib/db";
@@ -42,6 +41,9 @@ export function Highlights({
   const [busy, setBusy] = useState(false);
 
   const [voters, setVoters] = useState<Map<string, number> | null>(null);
+
+  /** Quantos cada um escolhe — configuração da pelada. */
+  const votesPerPlayer = state.settings.votesPerPlayer;
 
   const candidates = state.players
     .filter((p) => p.checkedInAt !== null && p.id !== meId)
@@ -89,7 +91,7 @@ export function Highlights({
     setPicked((cur) =>
       cur.includes(id)
         ? cur.filter((x) => x !== id)
-        : cur.length >= VOTES_PER_PLAYER
+        : cur.length >= votesPerPlayer
           ? cur
           : [...cur, id],
     );
@@ -109,7 +111,18 @@ export function Highlights({
               key={p.id}
               className="bg-surface border-border flex items-center gap-4 rounded-[16px] border px-5 py-6"
             >
-              <span className="text-3xl">⭐</span>
+              {/* a foto que o playtest pediu: quem tem conta aparece de
+                  cara no destaque; quem não tem continua com a estrela */}
+              {p.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={p.avatarUrl}
+                  alt=""
+                  className="border-accent/40 size-14 shrink-0 rounded-full border object-cover"
+                />
+              ) : (
+                <span className="text-3xl">⭐</span>
+              )}
               <span className="font-display text-ink truncate text-xl font-extrabold tracking-widest uppercase">
                 {p.name}
               </span>
@@ -128,14 +141,14 @@ export function Highlights({
         </p>
 
         <Link
-          href={`/destaques/${state.date}`}
+          href={`/p/${state.peladaSlug}/destaques/${state.date}`}
           className="font-display bg-accent text-accent-ink mt-8 flex h-14 items-center justify-center rounded-[12px] text-lg font-extrabold tracking-widest uppercase"
         >
           🖼 abrir card pra postar
         </Link>
 
         <Link
-          href="/destaques"
+          href={`/p/${state.peladaSlug}/destaques`}
           className="font-display text-muted mt-2 flex h-12 items-center justify-center text-sm tracking-widest uppercase"
         >
           ver destaques anteriores
@@ -178,7 +191,7 @@ export function Highlights({
       </button>
 
       <p className="text-muted mt-4 mb-6 text-center">
-        Escolha até {VOTES_PER_PLAYER}. Jogada, resenha, disposição, evolução —
+        Escolha até {votesPerPlayer}. Jogada, resenha, disposição, evolução —
         o que você quiser.
       </p>
 
@@ -197,11 +210,18 @@ export function Highlights({
                 }`}
               >
                 <span
-                  className={`font-display flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+                  className={`font-display flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full text-sm font-bold ${
                     on ? "bg-accent text-accent-ink" : "bg-surface-2 text-muted"
                   }`}
                 >
-                  {on ? "✓" : initials(p.name)}
+                  {on ? (
+                    "✓"
+                  ) : p.avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={p.avatarUrl} alt="" className="size-full object-cover" />
+                  ) : (
+                    initials(p.name)
+                  )}
                 </span>
                 <span className="font-display text-ink truncate text-base font-semibold tracking-wide uppercase">
                   {p.name}
@@ -213,7 +233,7 @@ export function Highlights({
       </ul>
 
       <p className="font-display tnum text-muted mt-4 text-center tracking-widest">
-        {picked.length} / {VOTES_PER_PLAYER}
+        {picked.length} / {votesPerPlayer}
       </p>
 
       {/* quem falta votar — só o organizador, e só QUEM votou, nunca
@@ -231,6 +251,20 @@ export function Highlights({
               <p className="font-display text-ink text-base font-semibold tracking-wide uppercase">
                 {missing.map((p) => p.name).join(" · ")}
               </p>
+              {/* cutucar é no grupo, não no app: o que falta é o texto */}
+              <button
+                type="button"
+                onClick={() =>
+                  void navigator.clipboard?.writeText(
+                    `Falta votar nos Destaques: ${missing
+                      .map((p) => p.name)
+                      .join(", ")} 🏐⭐`,
+                  )
+                }
+                className="font-display text-muted mt-2 h-10 text-xs tracking-widest uppercase underline"
+              >
+                copiar pro grupo
+              </button>
             </>
           )}
         </section>
@@ -245,7 +279,7 @@ export function Highlights({
           onClick={async () => {
             setBusy(true);
             try {
-              await castVotes(state.sessionId, meId, picked);
+              await castVotes(state.sessionId, meId, picked, votesPerPlayer);
               setVoted(true);
             } finally {
               setBusy(false);
@@ -260,6 +294,19 @@ export function Highlights({
           <button
             type="button"
             onClick={async () => {
+              // encerrar com gente faltando é decisão legítima (sempre
+              // vai ter alguém que já foi embora) — mas tem que ser
+              // DECISÃO, não descuido: a tela diz quantos faltam
+              if (
+                missing.length > 0 &&
+                !confirm(
+                  `Ainda faltam ${missing.length} votar (${missing
+                    .map((p) => p.name)
+                    .join(", ")}). Encerrar mesmo assim?`,
+                )
+              ) {
+                return;
+              }
               await closeVoting(state.sessionId);
               await refresh();
             }}

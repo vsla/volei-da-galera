@@ -1,17 +1,28 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, UserPlus } from "lucide-react";
+import { Search, UserCircle, UserPlus } from "lucide-react";
 import { initials, type SessionPlayer } from "@/lib/types";
 
 export function NamePicker({
   players,
+  peladaName = "Prainha ZN",
+  allowGuests = true,
   onPick,
   onAddGuest,
+  onBack,
+  onAccount,
 }: {
+  /** Abrir a conta — pra quem já tem e está num aparelho novo. */
+  onAccount?: () => void;
   players: SessionPlayer[];
+  /** Configuração da pelada: tem grupo que não quer convidado avulso. */
+  allowGuests?: boolean;
+  /** De qual pelada é esta lista — com várias, o título não pode ser fixo. */
+  peladaName?: string;
   onPick: (playerId: string) => void;
   onAddGuest: (name: string) => Promise<void>;
+  onBack?: () => void;
 }) {
   const [q, setQ] = useState("");
   const [guest, setGuest] = useState("");
@@ -29,7 +40,7 @@ export function NamePicker({
       <div className="mb-8 text-center">
         <div className="text-5xl">🏐</div>
         <h1 className="font-display text-ink mt-2 text-3xl font-extrabold tracking-widest uppercase">
-          Prainha ZN
+          {peladaName}
         </h1>
         <p className="font-display text-muted mt-4 text-lg tracking-widest uppercase">
           Quem é você?
@@ -72,7 +83,11 @@ export function NamePicker({
       )}
 
       <div className="mt-6">
-        {adding ? (
+        {!allowGuests ? (
+          <p className="text-muted text-center text-sm">
+            Esta pelada só aceita quem já é da lista. Fale com quem organiza.
+          </p>
+        ) : adding ? (
           <form
             onSubmit={async (e) => {
               e.preventDefault();
@@ -109,6 +124,33 @@ export function NamePicker({
           </button>
         )}
       </div>
+
+      {/*
+        Celular novo, mesma pessoa.
+        Sem esta porta, quem já tinha conta era obrigado a se achar na
+        lista de novo (e podia clicar no nome errado) — a conta existe
+        exatamente pra isso não acontecer.
+      */}
+      {onAccount && (
+        <button
+          type="button"
+          onClick={onAccount}
+          className="font-display text-muted hover:text-ink mt-3 flex h-12 w-full items-center justify-center gap-2 text-sm tracking-widest uppercase"
+        >
+          <UserCircle className="size-4" />
+          já tenho conta — entrar
+        </button>
+      )}
+
+      {onBack && (
+        <button
+          type="button"
+          onClick={onBack}
+          className="font-display text-muted mt-1 h-12 text-sm tracking-widest uppercase"
+        >
+          ← outras peladas
+        </button>
+      )}
     </main>
   );
 }

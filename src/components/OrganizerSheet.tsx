@@ -1,12 +1,23 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { useState } from "react";
+import { Delete, X } from "lucide-react";
 
 /**
- * PIN do organizador — sheet do app, sem o prompt nativo do browser.
- * Na areia o Chrome prompt é ilegível e fácil de cancelar sem querer.
+ * PIN do organizador — com teclado PRÓPRIO, na tela.
+ *
+ * Playtest 01: no Android, o campo (`type=password` + `inputMode=numeric`
+ * + `autocomplete=one-time-code`) abriu o teclado numérico, brigou com o
+ * gerenciador de senhas e travou a digitação — o organizador teve que
+ * copiar e colar o PIN pra conseguir entrar.
+ *
+ * A solução é a mesma do resto do app: não depender do teclado do
+ * sistema. Dez botões grandes, em pé, no escuro, com areia na mão. E
+ * como o teclado é nosso, o PIN é numérico por definição — não tem como
+ * o aparelho abrir "o teclado errado".
  */
+const MAX = 8;
+
 export function OrganizerSheet({
   onSuccess,
   onClose,
@@ -17,26 +28,26 @@ export function OrganizerSheet({
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+  const push = (d: string) => {
+    setErr(null);
+    setPin((v) => (v.length >= MAX ? v : v + d));
+    navigator.vibrate?.(10);
+  };
 
-  const submit = async () => {
-    if (busy || !pin.trim()) return;
+  const submit = async (value = pin) => {
+    if (busy || !value.trim()) return;
     setBusy(true);
     setErr(null);
     try {
       const res = await fetch("/api/organizer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin: pin.trim() }),
+        body: JSON.stringify({ pin: value.trim() }),
       });
       if (!res.ok) {
         setErr("PIN errado.");
         setPin("");
-        inputRef.current?.focus();
         return;
       }
       onSuccess();
@@ -47,6 +58,9 @@ export function OrganizerSheet({
     }
   };
 
+  const keyCls =
+    "font-display tnum bg-surface-2 text-ink flex h-16 items-center justify-center rounded-[12px] text-2xl font-bold active:bg-accent active:text-accent-ink";
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/70"
@@ -55,7 +69,7 @@ export function OrganizerSheet({
       }}
     >
       <div className="bg-surface border-border w-full max-w-[480px] rounded-t-[16px] border-t px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-        <div className="mb-4 flex items-center">
+        <div className="mb-3 flex items-center">
           <h2 className="font-display text-ink text-xl font-extrabold tracking-widest uppercase">
             Organizador
           </h2>
@@ -69,51 +83,63 @@ export function OrganizerSheet({
           </button>
         </div>
 
-        <p className="text-muted mb-5 text-sm">
+        <p className="text-muted mb-4 text-sm">
           Com o PIN você gera partida, marca quem ganhou e ajusta a escala.
         </p>
 
-        <label
-          htmlFor="org-pin"
-          className="font-display text-muted mb-2 block text-sm tracking-widest uppercase"
+        {/* os pontinhos mostram quantos dígitos já entraram, sem revelar o PIN */}
+        <div
+          className="bg-surface-2 border-border mb-3 flex h-14 items-center justify-center gap-3 rounded-[12px] border"
+          aria-live="polite"
+          aria-label={`${pin.length} dígitos`}
         >
-          PIN
-        </label>
-        <input
-          ref={inputRef}
-          id="org-pin"
-          type="password"
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          value={pin}
-          onChange={(e) => {
-            setPin(e.target.value);
-            if (err) setErr(null);
-          }}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-          className="bg-surface-2 text-ink border-border mb-3 h-14 w-full rounded-[12px] border px-4 text-center text-2xl tracking-[0.4em]"
-          placeholder="••••"
-        />
+          {pin.length === 0 ? (
+            <span className="text-muted text-sm tracking-widest uppercase">
+              digite o pin
+            </span>
+          ) : (
+            Array.from({ length: pin.length }, (_, i) => (
+              <span key={i} className="bg-accent size-3 rounded-full" />
+            ))
+          )}
+        </div>
 
         {err && <p className="text-live mb-3 text-center text-sm">{err}</p>}
 
-        <div className="flex flex-col gap-2">
+        <div className="grid grid-cols-3 gap-2">
+          {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
+            <button key={d} type="button" onClick={() => push(d)} className={keyCls}>
+              {d}
+            </button>
+          ))}
           <button
             type="button"
-            onClick={submit}
-            disabled={busy || !pin.trim()}
-            className="font-display bg-accent text-accent-ink flex h-14 items-center justify-center rounded-[12px] text-lg font-extrabold tracking-widest uppercase disabled:opacity-40"
+            onClick={() => setPin("")}
+            className="font-display text-muted flex h-16 items-center justify-center rounded-[12px] text-sm tracking-widest uppercase"
           >
-            {busy ? "conferindo…" : "entrar"}
+            limpar
+          </button>
+          <button type="button" onClick={() => push("0")} className={keyCls}>
+            0
           </button>
           <button
             type="button"
-            onClick={onClose}
-            className="font-display text-muted h-12 text-sm tracking-widest uppercase"
+            onClick={() => setPin((v) => v.slice(0, -1))}
+            aria-label="Apagar"
+            className="text-muted flex h-16 items-center justify-center rounded-[12px]"
           >
-            cancelar
+            <Delete className="size-6" />
           </button>
         </div>
+
+        <button
+          type="button"
+          onClick={() => submit()}
+          disabled={busy || !pin}
+          className="font-display bg-accent text-accent-ink mt-3 flex h-14 w-full items-center justify-center rounded-[12px] text-lg font-extrabold tracking-widest uppercase disabled:opacity-40"
+        >
+          {busy ? "conferindo…" : "entrar"}
+        </button>
       </div>
     </div>
   );

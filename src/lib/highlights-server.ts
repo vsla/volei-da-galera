@@ -38,6 +38,31 @@ async function rpc<T>(
   }
 }
 
+/** Uma leitura REST simples — mesma razão do `rpc` acima. */
+async function rest<T>(path: string, revalidate = 60): Promise<T | null> {
+  if (!URL_BASE || !KEY) return null;
+  try {
+    const r = await fetch(`${URL_BASE}/rest/v1/${path}`, {
+      headers: { apikey: KEY, Authorization: `Bearer ${KEY}` },
+      next: { revalidate },
+    });
+    if (!r.ok) return null;
+    return (await r.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+export type PeladaInfo = { id: string; name: string; slug: string };
+
+/** A pelada pelo slug da URL — os Destaques agora são de UMA pelada. */
+export async function getPelada(slug: string): Promise<PeladaInfo | null> {
+  const rows = await rest<PeladaInfo[]>(
+    `peladas?slug=eq.${encodeURIComponent(slug)}&select=id,name,slug&limit=1`,
+  );
+  return rows?.[0] ?? null;
+}
+
 type TallyRow = {
   session_id: string;
   played_on: string;
@@ -74,14 +99,22 @@ export type HighlightDay = {
   voters: number;
 };
 
-/** Todas as noites que já tiveram destaque, da mais recente pra mais antiga. */
-export async function listHighlightDays(): Promise<HighlightDay[]> {
-  return groupDays(await rpc<TallyRow[]>("highlight_days", { p_limit: 60 }));
+/** Todas as noites de UMA pelada que já tiveram destaque. */
+export async function listHighlightDays(peladaId: string): Promise<HighlightDay[]> {
+  return groupDays(
+    await rpc<TallyRow[]>("highlight_days_pelada", {
+      p_pelada: peladaId,
+      p_limit: 60,
+    }),
+  );
 }
 
 /** Os destaques de uma data específica. */
-export async function getHighlightDay(date: string): Promise<HighlightDay | null> {
-  const days = await listHighlightDays();
+export async function getHighlightDay(
+  peladaId: string,
+  date: string,
+): Promise<HighlightDay | null> {
+  const days = await listHighlightDays(peladaId);
   return days.find((d) => d.date === date) ?? null;
 }
 

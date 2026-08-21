@@ -1,18 +1,24 @@
 import { Flame } from "lucide-react";
+import { DEFAULT_TEAM_LABELS, type TeamLabels } from "@/lib/teams";
 import { courtNames, type SessionPlayer, type Team } from "@/lib/types";
 
 function TeamSide({
   team,
+  teamLabel,
   players,
   streak,
+  score,
   meId,
   labels,
   ranking,
   onPlayerTap,
 }: {
   team: Team;
+  teamLabel: string;
   players: SessionPlayer[];
   streak?: number;
+  /** Placar ao vivo — o mesmo que está na tela de quem marca. */
+  score?: number | null;
   meId?: string | null;
   labels: Map<string, string>;
   /** Só o organizador recebe — com ele vêm a força do time e as notas. */
@@ -31,7 +37,7 @@ function TeamSide({
 
       <div className="flex items-center gap-2">
         <h3 className={`font-display text-lg font-extrabold tracking-widest uppercase ${text}`}>
-          Time {team}
+          {teamLabel}
         </h3>
         {ranking && (
           <span className="font-display tnum text-muted text-sm tracking-widest uppercase">
@@ -44,6 +50,14 @@ function TeamSide({
             <span className="font-display tnum text-sm font-bold tracking-widest uppercase">
               {streak} {streak === 1 ? "vitória" : "vitórias"}
             </span>
+          </span>
+        )}
+        {/* o placar na home: quem não está marcando também precisa ver */}
+        {typeof score === "number" && (
+          <span
+            className={`font-display tnum ml-auto text-3xl leading-none font-extrabold ${text}`}
+          >
+            {score}
           </span>
         )}
       </div>
@@ -96,11 +110,18 @@ export function CourtCard({
   meId,
   canFinish = false,
   ranking,
+  teamLabels = DEFAULT_TEAM_LABELS,
+  scoreA,
+  scoreB,
   onWin,
   onPlayerTap,
 }: {
   teamA: SessionPlayer[];
   teamB: SessionPlayer[];
+  teamLabels?: TeamLabels;
+  /** Placar ao vivo. `null` quando ninguém abriu o placar nesta partida. */
+  scoreA?: number | null;
+  scoreB?: number | null;
   /** Só o organizador recebe: liga a força do time e as notas. */
   ranking?: Map<string, number>;
   /** Organizador toca num jogador pra trocar, mover ou marcar que foi embora. */
@@ -120,8 +141,10 @@ export function CourtCard({
     <section className="bg-surface border-border mx-4 mt-4 overflow-hidden rounded-[16px] border">
       <TeamSide
         team="A"
+        teamLabel={teamLabels.A}
         players={teamA}
         streak={championTeam === "A" ? streak : undefined}
+        score={scoreA}
         meId={meId}
         labels={labels}
         ranking={ranking}
@@ -138,8 +161,10 @@ export function CourtCard({
 
       <TeamSide
         team="B"
+        teamLabel={teamLabels.B}
         players={teamB}
         streak={championTeam === "B" ? streak : undefined}
+        score={scoreB}
         meId={meId}
         labels={labels}
         ranking={ranking}
@@ -151,16 +176,16 @@ export function CourtCard({
           <button
             type="button"
             onClick={() => onWin?.("A")}
-            className="font-display border-team-a text-team-a active:bg-team-a active:text-bg h-12 rounded-[12px] border text-base font-bold tracking-widest uppercase"
+            className="font-display border-team-a text-team-a active:bg-team-a active:text-bg h-12 truncate rounded-[12px] border text-base font-bold tracking-widest uppercase"
           >
-            A ganhou
+            {teamLabels.A} ganhou
           </button>
           <button
             type="button"
             onClick={() => onWin?.("B")}
-            className="font-display border-team-b text-team-b active:bg-team-b active:text-bg h-12 rounded-[12px] border text-base font-bold tracking-widest uppercase"
+            className="font-display border-team-b text-team-b active:bg-team-b active:text-bg h-12 truncate rounded-[12px] border text-base font-bold tracking-widest uppercase"
           >
-            B ganhou
+            {teamLabels.B} ganhou
           </button>
         </div>
       )}

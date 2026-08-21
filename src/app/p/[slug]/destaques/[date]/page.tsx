@@ -1,40 +1,44 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getHighlightDay, longDate } from "@/lib/highlights-server";
+import { getHighlightDay, getPelada, longDate } from "@/lib/highlights-server";
 import { ShareCard } from "@/components/ShareCard";
 
-type Props = { params: Promise<{ date: string }> };
+type Props = { params: Promise<{ slug: string; date: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { date } = await params;
-  const day = await getHighlightDay(date);
+  const { slug, date } = await params;
+  const pelada = await getPelada(slug);
+  const day = pelada ? await getHighlightDay(pelada.id, date) : null;
   const names = day?.winners.map((w) => w.name).join(" · ") ?? "";
+  const og = `/api/og/${slug}/${date}`;
 
   return {
-    title: `Destaques de ${date} — Vôlei Prainha ZN`,
+    title: `Destaques de ${date} — ${pelada?.name ?? "Pelada"}`,
     description: names || "Destaques do Dia",
     openGraph: {
       title: "🏆 Destaques do Dia",
-      description: names || "Vôlei Prainha ZN",
-      images: [`/api/og/${date}`],
+      description: names || (pelada?.name ?? "Vôlei da Galera"),
+      images: [og],
       type: "article",
     },
-    twitter: { card: "summary_large_image", images: [`/api/og/${date}`] },
+    twitter: { card: "summary_large_image", images: [og] },
   };
 }
 
 export default async function DiaPage({ params }: Props) {
-  const { date } = await params;
-  const day = await getHighlightDay(date);
-  if (!day) notFound();
+  const { slug, date } = await params;
+  const pelada = await getPelada(slug);
+  const day = pelada ? await getHighlightDay(pelada.id, date) : null;
+  if (!pelada || !day) notFound();
 
   return (
     <main className="flex flex-1 flex-col px-4 pt-10 pb-6">
       <h1 className="font-display text-ink text-center text-2xl font-extrabold tracking-widest uppercase">
         🏆 Destaques do dia
       </h1>
-      <p className="text-muted mt-2 mb-8 text-center">{longDate(day.date)}</p>
+      <p className="text-muted mt-2 text-center">{longDate(day.date)}</p>
+      <p className="text-muted/70 mb-8 text-center text-sm">{pelada.name}</p>
 
       <ul className="flex flex-col gap-3">
         {day.winners.map((p) => (
@@ -54,17 +58,21 @@ export default async function DiaPage({ params }: Props) {
         <p className="text-muted py-10 text-center">Ninguém votou nessa noite.</p>
       )}
 
-      <ShareCard date={day.date} names={day.winners.map((w) => w.name)} />
+      <ShareCard
+        date={day.date}
+        slug={slug}
+        names={day.winners.map((w) => w.name)}
+      />
 
       <div className="mt-8 flex flex-col items-center gap-2">
         <Link
-          href="/destaques"
+          href={`/p/${slug}/destaques`}
           className="font-display text-muted h-12 text-sm tracking-widest uppercase"
         >
           ver todos os destaques
         </Link>
         <Link
-          href="/"
+          href={`/p/${slug}`}
           className="font-display text-muted h-12 text-sm tracking-widest uppercase"
         >
           voltar pra quadra

@@ -4,21 +4,36 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { fetchState, type LiveState } from "@/lib/db";
 
-const TABLES = ["sessions", "session_players", "matches", "match_players"];
+const TABLES = [
+  "sessions",
+  "session_players",
+  "matches",
+  "match_players",
+  "pelada_members",
+];
 /** Rede de praia cai. O polling é o que segura quando o realtime some. */
 const POLL_MS = 5000;
 /** Depois disso, a tela avisa que o que está ali é estado velho. */
 const STALE_MS = 20000;
 
-export function useLiveSession() {
+/**
+ * O estado ao vivo de UMA pelada.
+ *
+ * Antes o hook lia "a sessão mais recente do banco", que só fazia
+ * sentido com uma pelada no mundo (v1). Agora a pelada é parâmetro — e
+ * o canal do realtime é por pelada, senão o vôlei de domingo acorda o
+ * celular de quem está jogando na sexta.
+ */
+export function useLiveSession(peladaId: string | null) {
   const [state, setState] = useState<LiveState | null>(null);
   const [loading, setLoading] = useState(true);
   const [stale, setStale] = useState(false);
   const lastOk = useRef(Date.now());
 
   const refresh = useCallback(async () => {
+    if (!peladaId) return;
     try {
-      const next = await fetchState();
+      const next = await fetchState(peladaId);
       setState(next);
       lastOk.current = Date.now();
       setStale(false);
@@ -29,12 +44,16 @@ export function useLiveSession() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [peladaId]);
 
   useEffect(() => {
+    if (!peladaId) {
+      setLoading(false);
+      return;
+    }
     refresh();
 
-    const channel = supabase.channel("volei-live");
+    const channel = supabase.channel(`volei-live:${peladaId}`);
     for (const table of TABLES) {
       channel.on("postgres_changes", { event: "*", schema: "public", table }, () =>
         refresh(),
@@ -55,7 +74,7 @@ export function useLiveSession() {
       clearInterval(poll);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [refresh]);
+  }, [refresh, peladaId]);
 
   return { state, loading, stale, refresh };
 }

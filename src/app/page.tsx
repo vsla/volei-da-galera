@@ -1,29 +1,29 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useLiveSession } from "@/hooks/useLiveSession";
-import { NamePicker } from "@/components/NamePicker";
-import { Lobby } from "@/components/Lobby";
-import { addGuest } from "@/lib/db";
-import { getMe, setMe } from "@/lib/identity";
+import { useRouter } from "next/navigation";
+import { PeladaPicker } from "@/components/PeladaPicker";
+import { getLastPelada } from "@/lib/identity";
 
+/**
+ * A raiz manda pra última pelada aberta.
+ *
+ * Quem joga numa pelada só — que é quase todo mundo — não deveria
+ * escolher nada: o link do grupo abre a quadra da noite direto, igual
+ * ao v1. A tela de escolha aparece pra quem ainda não entrou em
+ * nenhuma, e por "← outras peladas".
+ */
 export default function Home() {
-  const { state, loading, stale, refresh } = useLiveSession();
-  const [meId, setMeId] = useState<string | null>(null);
-  const [ready, setReady] = useState(false);
+  const router = useRouter();
+  const [checked, setChecked] = useState(false);
 
-  // localStorage só existe no cliente — evita divergência com o SSR
   useEffect(() => {
-    setMeId(getMe());
-    setReady(true);
-  }, []);
+    const last = getLastPelada();
+    if (last) router.replace(`/p/${last}`);
+    else setChecked(true);
+  }, [router]);
 
-  const pick = (playerId: string) => {
-    setMe(playerId);
-    setMeId(playerId);
-  };
-
-  if (!ready || loading) {
+  if (!checked) {
     return (
       <main className="flex flex-1 items-center justify-center">
         <span className="text-4xl">🏐</span>
@@ -31,31 +31,5 @@ export default function Home() {
     );
   }
 
-  if (!state) {
-    return (
-      <main className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-        <span className="text-4xl">🏐</span>
-        <p className="font-display text-muted text-lg tracking-widest uppercase">
-          Ainda não abriu a lista de hoje
-        </p>
-      </main>
-    );
-  }
-
-  // quem já escolheu o nome pula direto pro lobby
-  if (!meId || !state.players.some((p) => p.id === meId)) {
-    return (
-      <NamePicker
-        players={state.players}
-        onPick={pick}
-        onAddGuest={async (name) => {
-          const id = await addGuest(name);
-          await refresh();
-          if (id) pick(id);
-        }}
-      />
-    );
-  }
-
-  return <Lobby state={state} stale={stale} meId={meId} refresh={refresh} />;
+  return <PeladaPicker />;
 }

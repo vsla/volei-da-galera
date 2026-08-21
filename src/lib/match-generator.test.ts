@@ -143,12 +143,12 @@ describe("campeão", () => {
   );
   const others = Array.from({ length: 15 }, (_, i) => player(`fila${i}`, { gamesPlayed: 1 }));
 
-  it("com streak abaixo do teto, o campeão fica — e vira o time A", () => {
+  it("com streak abaixo do teto, o campeão fica — no lado dele", () => {
     const r = ok(
       generateNextMatch({
         ...base,
         players: [...champions, ...others],
-        champion: { playerIds: ids(champions), streak: 1 },
+        champion: { playerIds: ids(champions), streak: 1, team: "A" },
       }),
     );
     expect(r.championStays).toBe(true);
@@ -164,7 +164,7 @@ describe("campeão", () => {
           ...champions.map((p) => ({ ...p, gamesPlayed: 9 })),
           ...others,
         ],
-        champion: { playerIds: ids(champions), streak: 1 },
+        champion: { playerIds: ids(champions), streak: 1, team: "A" },
       }),
     );
     expect(ids(r.teamA).sort()).toEqual(ids(champions).sort());
@@ -176,7 +176,7 @@ describe("campeão", () => {
       generateNextMatch({
         ...base,
         players: [...champions, ...others],
-        champion: { playerIds: ids(champions), streak: 2 },
+        champion: { playerIds: ids(champions), streak: 2, team: "A" },
         maxStreak: 2,
       }),
     );
@@ -194,7 +194,7 @@ describe("campeão", () => {
       generateNextMatch({
         ...base,
         players: [...champions, ...esperando, ...perdedores],
-        champion: { playerIds: ids(champions), streak: 1 },
+        champion: { playerIds: ids(champions), streak: 1, team: "A" },
       }),
     );
     const desafiante = ids(r.teamB);
@@ -212,7 +212,7 @@ describe("campeão", () => {
           ...champions.map((p) => ({ ...p, gamesPlayed: 5 })),
           ...others,
         ],
-        champion: { playerIds: ids(champions), streak: 1 },
+        champion: { playerIds: ids(champions), streak: 1, team: "A" },
         forceReshuffle: true,
       }),
     );
@@ -227,7 +227,7 @@ describe("campeão", () => {
       generateNextMatch({
         ...base,
         players: [...incompleto, ...others],
-        champion: { playerIds: ids(champions), streak: 1 },
+        champion: { playerIds: ids(champions), streak: 1, team: "A" },
       }),
     );
     expect(r.teamA).toHaveLength(6);
@@ -312,7 +312,7 @@ describe("variedade", () => {
       generateNextMatch({
         ...base,
         players: [...champions, ...others],
-        champion: { playerIds: ids(champions), streak: 1 },
+        champion: { playerIds: ids(champions), streak: 1, team: "A" },
         history,
       }),
     );
@@ -371,7 +371,7 @@ describe("nota", () => {
       generateNextMatch({
         ...base,
         players: [...champions, ...fila],
-        champion: { playerIds: ids(champions), streak: 1 },
+        champion: { playerIds: ids(champions), streak: 1, team: "A" },
         seed: "nota2",
       }),
     );
@@ -415,7 +415,7 @@ describe("equilíbrio não fura a fila", () => {
       generateNextMatch({
         ...base,
         players,
-        champion: { playerIds: ids(champions), streak: 1 },
+        champion: { playerIds: ids(champions), streak: 1, team: "A" },
         seed: "eq1",
       }),
     );
@@ -439,7 +439,7 @@ describe("equilíbrio não fura a fila", () => {
       generateNextMatch({
         ...base,
         players,
-        champion: { playerIds: ids(champions), streak: 1 },
+        champion: { playerIds: ids(champions), streak: 1, team: "A" },
         seed: "eq2",
       }),
     );
@@ -465,7 +465,7 @@ describe("equilíbrio não fura a fila", () => {
         teamA: r.teamA,
         teamB: r.teamB,
         winner: round % 2 === 0 ? "A" : "B",
-        championStays: r.championStays,
+        holderTeam: r.holderTeam,
         championStreak: champion?.streak ?? 0,
         maxStreak: 2,
         at: `2026-08-14T2${round % 10}:00:00Z`,
@@ -473,6 +473,77 @@ describe("equilíbrio não fura a fila", () => {
       players = out.players;
       champion = out.champion;
     }
+  });
+});
+
+/**
+ * TETO DE ESPERA (playtest 01 §11).
+ *
+ * "Acharam meio estranho alguns ficarem 3 rodadas fora." O teto entra
+ * como configuração — e ele fura o DESEMPATE, nunca a contagem de
+ * jogos. Se furasse a contagem, seria a "janela" que o reasonable.md §5
+ * tirou de propósito.
+ */
+describe("teto de espera", () => {
+  const champions = Array.from({ length: 6 }, (_, i) =>
+    player(`camp${i}`, { gamesPlayed: 3, lastPlayedAt: "2026-08-14T21:00:00Z" }),
+  );
+
+  /**
+   * O caso real: o esquecido é quem o EQUILÍBRIO não quer.
+   *
+   * Todo mundo empatado em jogos, campeão fraco na quadra. Sem teto, o
+   * gerador prefere os fracos (partida parelha) e o craque que está fora
+   * há 3 rodadas continua fora — foi exatamente essa a queixa.
+   */
+  const fracos = Array.from({ length: 11 }, (_, i) =>
+    player(`fraco${i}`, { rating: 2, gamesPlayed: 1 }),
+  );
+  const esquecido = player("esquecido", {
+    rating: 10,
+    gamesPlayed: 1,
+    roundsWaiting: 3,
+  });
+  const fracosChamp = champions.map((p) => ({ ...p, rating: 2 }));
+
+  it("sem teto, quem o equilíbrio não quer continua fora", () => {
+    const r = ok(
+      generateNextMatch({
+        ...base,
+        players: [...fracosChamp, ...fracos, esquecido],
+        champion: { playerIds: ids(fracosChamp), streak: 1, team: "A" },
+        seed: "cap",
+      }),
+    );
+    expect(ids(r.teamB)).not.toContain("esquecido");
+  });
+
+  it("com teto, ele entra na frente dos empatados", () => {
+    const r = ok(
+      generateNextMatch({
+        ...base,
+        players: [...fracosChamp, ...fracos, esquecido],
+        champion: { playerIds: ids(fracosChamp), streak: 1, team: "A" },
+        waitCap: 3,
+        seed: "cap",
+      }),
+    );
+    expect(ids(r.teamB)).toContain("esquecido");
+    expect(r.explanation.extraGamesUsed).toBe(0);
+  });
+
+  it("o teto NÃO fura a contagem de jogos", () => {
+    // quem esperou muito mas já jogou mais continua atrás de quem jogou
+    // menos: isso é a fila, e ela não se negocia
+    const players = [
+      player("esperou", { gamesPlayed: 5, roundsWaiting: 9 }),
+      ...Array.from({ length: 12 }, (_, i) =>
+        player(`novato${i}`, { gamesPlayed: 0 }),
+      ),
+    ];
+    const r = ok(generateNextMatch({ ...base, players, waitCap: 2 }));
+    expect([...ids(r.teamA), ...ids(r.teamB)]).not.toContain("esperou");
+    expect(r.explanation.extraGamesUsed).toBe(0);
   });
 });
 
@@ -505,7 +576,7 @@ describe("nota após a partida", () => {
       teamA: teamA.map((p) => (p.id === over.id ? { ...p, ...over } : p)),
       teamB: teamB.map((p) => (p.id === over.id ? { ...p, ...over } : p)),
       winner: "A",
-      championStays: false,
+      holderTeam: null,
       championStreak: 0,
       maxStreak: 2,
       at: "2026-08-14T20:00:00Z",
@@ -531,7 +602,7 @@ describe("nota após a partida", () => {
       teamA,
       teamB,
       winner: "A",
-      championStays: false,
+      holderTeam: null,
       championStreak: 0,
       maxStreak: 2,
       at: "2026-08-14T20:00:00Z",
@@ -557,7 +628,7 @@ describe("nota após a partida", () => {
       teamA,
       teamB,
       winner: "A",
-      championStays: false,
+      holderTeam: null,
       championStreak: 0,
       maxStreak: 2,
       at: "2026-08-14T20:00:00Z",
@@ -652,7 +723,7 @@ describe("simulação da noite", () => {
         teamA: r.teamA,
         teamB: r.teamB,
         winner,
-        championStays: r.championStays,
+        holderTeam: r.holderTeam,
         championStreak,
         maxStreak: opts.maxStreak,
         at: new Date(Date.UTC(2026, 7, 14, 19, round * 12)).toISOString(),
@@ -689,27 +760,31 @@ describe("rotação", () => {
   const teamB = Array.from({ length: 6 }, (_, i) => player(`b${i}`));
   const players = [...teamA, ...teamB, player("fora")];
 
-  const apply = (winner: "A" | "B", championStays: boolean, championStreak: number) =>
+  const apply = (
+    winner: "A" | "B",
+    holderTeam: "A" | "B" | null,
+    championStreak: number,
+  ) =>
     applyMatchResult({
-      players, teamA, teamB, winner, championStays, championStreak,
+      players, teamA, teamB, winner, holderTeam, championStreak,
       maxStreak: 2, at: "2026-08-14T20:00:00Z",
     });
 
   it("soma +1 jogo só pra quem estava na quadra", () => {
-    const { players: after } = apply("A", false, 0);
+    const { players: after } = apply("A", null, 0);
     expect(after.find((p) => p.id === "a0")!.gamesPlayed).toBe(1);
     expect(after.find((p) => p.id === "fora")!.gamesPlayed).toBe(0);
   });
 
   it("primeira vitória vira campeão com streak 1", () => {
-    const { champion, winnerDissolved } = apply("A", false, 0);
+    const { champion, winnerDissolved } = apply("A", null, 0);
     expect(winnerDissolved).toBe(false);
     expect(champion!.streak).toBe(1);
     expect(champion!.playerIds).toEqual(teamA.map((p) => p.id));
   });
 
   it("no teto, o vencedor é desfeito e o PERDEDOR fica na quadra", () => {
-    const { champion, winnerDissolved, leaving } = apply("A", true, 1);
+    const { champion, winnerDissolved, leaving } = apply("A", "A", 1);
     expect(winnerDissolved).toBe(true);
     // quem ganhou 2x vai pro fim da fila
     expect(leaving.map((p) => p.id)).toEqual(teamA.map((p) => p.id));
@@ -719,20 +794,148 @@ describe("rotação", () => {
   });
 
   it("desafiante que ganha vira campeão com streak 1", () => {
-    const { champion, winnerDissolved } = apply("B", true, 1);
+    const { champion, winnerDissolved } = apply("B", "A", 1);
     expect(winnerDissolved).toBe(false);
     expect(champion!.streak).toBe(1);
     expect(champion!.playerIds).toEqual(teamB.map((p) => p.id));
   });
 
+  /**
+   * SUBSTITUIÇÃO TAPA-BURACO (playtest 01 §6).
+   *
+   * "Se ele estava no time que ganhou e mudou lá no sistema, ele meio
+   * que só joga uma a mais — deveria não contar e continuar."
+   */
+  it("tapa-buraco: quem entrou no meio não conta a partida, mas continua em quadra", () => {
+    const entrou = teamA[0];
+    const saiu = player("saiu-no-meio", { gamesPlayed: 2 });
+    const { players: after, champion } = applyMatchResult({
+      players: [...players, saiu],
+      teamA,
+      teamB,
+      winner: "A",
+      holderTeam: null,
+      championStreak: 0,
+      maxStreak: 2,
+      notCounted: [entrou.id],
+      alsoPlayed: [{ playerId: saiu.id, team: "A" }],
+      at: "2026-08-14T20:00:00Z",
+    });
+
+    const sub = after.find((p) => p.id === entrou.id)!;
+    expect(sub.gamesPlayed).toBe(0);
+    expect(sub.rating).toBe(5);
+    // e não acumulou espera: ele estava em quadra, não na fila
+    expect(sub.roundsWaiting).toBe(0);
+    // continua na quadra com o time que ganhou
+    expect(champion!.playerIds).toContain(entrou.id);
+
+    // quem saiu no meio leva a partida que jogou
+    const titular = after.find((p) => p.id === saiu.id)!;
+    expect(titular.gamesPlayed).toBe(3);
+    expect(titular.rating).toBe(5.5);
+  });
+
+  it("modo titular (padrão): quem entrou conta a partida normalmente", () => {
+    const { players: after } = apply("A", null, 0);
+    expect(after.find((p) => p.id === "a0")!.gamesPlayed).toBe(1);
+  });
+
   it("sempre exatamente um time sai de quadra — nunca os dois", () => {
-    for (const [winner, stays, streak] of [
-      ["A", false, 0],
-      ["A", true, 1],
-      ["B", true, 1],
+    for (const [winner, holder, streak] of [
+      ["A", null, 0],
+      ["A", "A", 1],
+      ["B", "A", 1],
     ] as const) {
-      const { leaving } = apply(winner, stays, streak);
+      const { leaving } = apply(winner, holder, streak);
       expect(leaving).toHaveLength(6);
+    }
+  });
+
+  // ── o lado (playtest 01 §5) ────────────────────────────────
+  //
+  // A regra antiga era "quem fica vira o time A". Na areia o time não
+  // troca de lado da rede — a tela é que trocava a letra, e botaram
+  // ponto no time errado. Estes três travam o conserto.
+
+  it("quem fica mantém o lado — ganhar não renomeia o time", () => {
+    // o B estava segurando a quadra e ganhou de novo: continua B
+    // (streak 0 → 1: longe do teto, senão o time seria desfeito)
+    const { champion } = apply("B", "B", 0);
+    expect(champion!.team).toBe("B");
+    expect(champion!.playerIds).toEqual(teamB.map((p) => p.id));
+  });
+
+  it("o desafiante que ganha assume o lado EM QUE ELE JÁ ESTAVA", () => {
+    // A defendia, B (desafiante) ganhou: quem fica agora é o B, do lado B
+    const { champion } = apply("B", "A", 1);
+    expect(champion!.team).toBe("B");
+  });
+
+  it("no teto, quem segura a quadra é o perdedor — no lado dele", () => {
+    const { champion, winnerDissolved } = apply("B", "B", 1);
+    expect(winnerDissolved).toBe(true);
+    expect(champion!.team).toBe("A");
+    expect(champion!.playerIds).toEqual(teamA.map((p) => p.id));
+  });
+});
+
+describe("lado da quadra no gerador", () => {
+  const champions = Array.from({ length: 6 }, (_, i) =>
+    player(`camp${i}`, { gamesPlayed: 2, lastPlayedAt: "2026-08-14T21:00:00Z" }),
+  );
+  const others = Array.from({ length: 15 }, (_, i) =>
+    player(`fila${i}`, { gamesPlayed: 1 }),
+  );
+
+  it("campeão do lado B continua no lado B, e o desafiante entra no A", () => {
+    const r = ok(
+      generateNextMatch({
+        ...base,
+        players: [...champions, ...others],
+        champion: { playerIds: ids(champions), streak: 1, team: "B" },
+      }),
+    );
+    expect(r.holderTeam).toBe("B");
+    expect(ids(r.teamB).sort()).toEqual(ids(champions).sort());
+    expect(ids(r.teamA).every((id) => id.startsWith("fila"))).toBe(true);
+  });
+
+  it("sem campeão, não há dono da quadra", () => {
+    const r = ok(generateNextMatch({ ...base, players: roster() }));
+    expect(r.holderTeam).toBeNull();
+  });
+
+  it("o lado atravessa a noite inteira sem trocar sozinho", () => {
+    // o campeão começa no B; enquanto ele ganhar, tem que continuar no B
+    let players = [...champions, ...others];
+    let champion: Champion = { playerIds: ids(champions), streak: 0, team: "B" };
+
+    for (let round = 0; round < 3; round++) {
+      const r = ok(
+        // teto alto dos dois lados: o campeão não é desfeito no meio do teste
+        generateNextMatch({
+          ...base,
+          players,
+          champion,
+          maxStreak: 5,
+          seed: `lado|${round}`,
+        }),
+      );
+      expect(r.holderTeam).toBe("B");
+      const out = applyMatchResult({
+        players,
+        teamA: r.teamA,
+        teamB: r.teamB,
+        winner: "B", // quem está na quadra ganha sempre
+        holderTeam: r.holderTeam,
+        championStreak: champion?.streak ?? 0,
+        maxStreak: 5, // teto alto: o campeão não é desfeito no meio do teste
+        at: `2026-08-14T2${round}:00:00Z`,
+      });
+      expect(out.champion!.team).toBe("B");
+      players = out.players;
+      champion = out.champion;
     }
   });
 });

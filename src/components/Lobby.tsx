@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Header } from "./Header";
 import { LiveStrip } from "./LiveStrip";
 import { CourtCard, EmptyCourt } from "./CourtCard";
@@ -18,6 +19,7 @@ import { PlayerSheet, type PlayerContext } from "./PlayerSheet";
 import { Highlights } from "./Highlights";
 import { OrganizerSheet } from "./OrganizerSheet";
 import { CheckInSheet } from "./CheckInSheet";
+import { AccountSheet } from "./AccountSheet";
 import { generateNextMatch, orderQueue } from "@/lib/match-generator";
 import {
   checkIn,
@@ -30,11 +32,13 @@ import {
   reopenSession,
   resetSession,
   swapPlayer,
+  swapSides,
   undoCheckIn,
   type FinishSummary,
   type LiveState,
 } from "@/lib/db";
 import { clearMe, isOrganizer, setOrganizer } from "@/lib/identity";
+import { DEFAULT_TEAM_LABELS, teamName, teamTitle } from "@/lib/teams";
 import type { SessionPlayer, Team } from "@/lib/types";
 
 const dateLabel = (iso: string) =>
@@ -53,7 +57,9 @@ export function Lobby({
   meId: string;
   refresh: () => Promise<void>;
 }) {
-  const [org, setOrg] = useState(isOrganizer());
+  const router = useRouter();
+  // organizador é POR PELADA: o PIN da sexta não abre a de domingo
+  const [pinOrg, setPinOrg] = useState(() => isOrganizer(state.peladaId));
   const [why, setWhy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -64,6 +70,7 @@ export function Lobby({
   const [menu, setMenu] = useState(false);
   const [score, setScore] = useState(false);
   const [history, setHistory] = useState(false);
+  const [account, setAccount] = useState(false);
   /** Confirmação pendente — ver ConfirmSheet. */
   const [confirm, setConfirm] = useState<{
     title: string;
@@ -85,6 +92,25 @@ export function Lobby({
   >(null);
 
   const match = state.activeMatch;
+  /** Nome dos times — configuração da pelada; a cor é do tema. */
+  const teamLabels = state.settings.teamLabels ?? DEFAULT_TEAM_LABELS;
+  /** Papel de quem está olhando, dentro DESTA pelada. */
+  const myRole = state.roles.get(meId) ?? null;
+  const isAdmin = myRole === "owner" || myRole === "admin";
+  /**
+   * Quem manda na noite.
+   *
+   * Três caminhos, e todos precisam existir: o papel na pelada (o certo,
+   * desde a F4), o PIN no aparelho (o de sempre, pra quem pegou o
+   * celular emprestado) e a configuração `whoCanManage: "everyone"`, pra
+   * pelada pequena que não quer burocracia.
+   */
+  const canManage =
+    isAdmin || pinOrg || state.settings.whoCanManage === "everyone";
+  /** Tudo que era "é organizador?" na tela passa por aqui. */
+  const org = canManage;
+  /** Alguém está marcando ponto a ponto nesta partida? */
+  const scoreStarted = Boolean(match && (match.scoreA > 0 || match.scoreB > 0));
   const onCourt = useMemo(
     () => new Set([...(match?.teamA ?? []), ...(match?.teamB ?? [])].map((p) => p.id)),
     [match],
@@ -93,6 +119,19 @@ export function Lobby({
   const checkedIn = state.players.filter((p) => p.checkedInAt !== null);
   const me = state.players.find((p) => p.id === meId);
   const amCheckedIn = Boolean(me?.checkedInAt);
+
+  /** Quem segura a quadra, e em que lado — pras prévias do gerador. */
+  const championArg = useMemo(
+    () =>
+      state.championIds.length
+        ? {
+            playerIds: state.championIds,
+            streak: state.championStreak,
+            team: state.championTeam ?? ("A" as Team),
+          }
+        : null,
+    [state.championIds, state.championStreak, state.championTeam],
+  );
 
   const queue = useMemo(
     () =>
@@ -108,15 +147,13 @@ export function Lobby({
     const r = generateNextMatch({
       players: state.players,
       teamSize: state.teamSize,
-      champion: state.championIds.length
-        ? { playerIds: state.championIds, streak: state.championStreak }
-        : null,
+      champion: championArg,
       maxStreak: state.maxStreak,
       history: state.history,
       seed: `${state.sessionId}|${state.round + 1}|`,
     });
     return r.ok ? r.explanation : null;
-  }, [state]);
+  }, [state, championArg]);
 
   /**
    * Prévia da PRÓXIMA partida, com times.
@@ -130,46 +167,95 @@ export function Lobby({
     const r = generateNextMatch({
       players: state.players,
       teamSize: state.teamSize,
-      champion: state.championIds.length
-        ? { playerIds: state.championIds, streak: state.championStreak }
-        : null,
+      champion: championArg,
       maxStreak: state.maxStreak,
       history: state.history,
       seed: `${state.sessionId}|${state.round + 1}|${nextUp.nonce}`,
     });
     return r;
-  }, [nextUp, state]);
+  }, [nextUp, state, championArg]);
 
   /**
    * Ranking de nota — posição de cada um, 1 = maior nota. Igual ao do
-   * bot. Só o organizador recebe: pra galera a nota segue invisível.
+   * bot. Quem vê é configuração da pelada (`showRating`): o padrão
+   * continua sendo só o organizador, porque nota pública entre 25
+   * amigos vira ranking social (`RESUMO.md`).
    */
   const ranking = useMemo(() => {
-    if (!org) return undefined;
+    const show =
+      state.settings.showRating === "everyone" ||
+      (state.settings.showRating === "organizers" && canManage);
+    if (!show) return undefined;
     const sorted = state.players
       .slice()
       .sort((a, b) => b.rating - a.rating || a.name.localeCompare(b.name));
     return new Map(sorted.map((p, i) => [p.id, i + 1]));
-  }, [org, state.players]);
+  }, [canManage, state.settings.showRating, state.players]);
 
-  /** Quem entra na próxima partida, pra fila marcar com ▶. */
-  const nextUpIds = useMemo(() => {
+  /**
+   * A fila como ela é VIVIDA, não como está gravada.
+   *
+   * `rounds_waiting` só anda no registro da partida (`rotation.ts`), de
+   * propósito: quem é sorteado e substituído antes do apito não perde a
+   * espera que acumulou. O efeito colateral apareceu no playtest 01 —
+   * com jogo rolando, quem está de fora vê o número da rodada passada e
+   * jura que a fila está mentindo ("tô fora há 2 e diz 1").
+   *
+   * Aqui a partida em andamento é contada como fora. A regra do banco
+   * continua exatamente a mesma; muda o que a tela diz.
+   */
+  const queueView = useMemo(
+    () =>
+      match
+        ? queue.map((p) => ({ ...p, roundsWaiting: p.roundsWaiting + 1 }))
+        : queue,
+    [queue, match],
+  );
+
+  /**
+   * Quem entra na próxima partida — o `▶` do bot, e o bloco fixo no topo.
+   *
+   * Com jogo rolando, a prévia do gerador não serve: ela usaria o campeão
+   * da partida ANTERIOR. Mas a rotação garante que sempre giram
+   * exatamente `teamSize` (`reasonable.md` §8), então os primeiros da
+   * fila entram ganhando quem ganhar — é aproximado só no desempate
+   * entre empatados em jogos, e por isso a tela diz "prováveis".
+   */
+  const { nextUpIds, nextUpPlayers, nextUpExact } = useMemo(() => {
+    if (match) {
+      const slots = state.teamSize;
+      const players = queue.slice(0, slots);
+      return {
+        nextUpIds: new Set(players.map((p) => p.id)),
+        nextUpPlayers: players,
+        nextUpExact: false,
+      };
+    }
+
     const r = generateNextMatch({
       players: state.players,
       teamSize: state.teamSize,
-      champion: state.championIds.length
-        ? { playerIds: state.championIds, streak: state.championStreak }
-        : null,
+      champion: championArg,
       maxStreak: state.maxStreak,
       history: state.history,
       seed: `${state.sessionId}|${state.round + 1}|`,
     });
-    if (!r.ok) return undefined;
+    if (!r.ok) {
+      return { nextUpIds: undefined, nextUpPlayers: [], nextUpExact: false };
+    }
+
     const champions = new Set(state.championIds);
-    return new Set(
-      [...r.teamA, ...r.teamB].map((p) => p.id).filter((id) => !champions.has(id)),
-    );
-  }, [state]);
+    const entering = [...r.teamA, ...r.teamB].filter((p) => !champions.has(p.id));
+    // na ordem da fila, não na ordem dos times: é a fila que a galera confere
+    const order = new Map(queue.map((p, i) => [p.id, i]));
+    entering.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+
+    return {
+      nextUpIds: new Set(entering.map((p) => p.id)),
+      nextUpPlayers: entering,
+      nextUpExact: true,
+    };
+  }, [state, match, queue, championArg]);
 
   /**
    * O resumo da última partida, derivado do banco.
@@ -186,15 +272,26 @@ export function Lobby({
     if (!staying.size) return null;
 
     const winners = last.winner === "A" ? last.teamA : last.teamB;
+    const dissolved = !winners.some((p) => staying.has(p.id));
     return {
       winner: last.winner,
       staying: onCourt.filter((p) => staying.has(p.id)),
+      // quem fica mantém o lado: se o vencedor foi desfeito, quem segura
+      // a quadra é o perdedor — no lado dele, não renomeado
+      stayingTeam:
+        state.championTeam ??
+        (dissolved ? (last.winner === "A" ? "B" : "A") : last.winner),
       leaving: onCourt.filter((p) => !staying.has(p.id)),
-      // o vencedor foi desfeito se nenhum dele ficou na quadra
-      winnerDissolved: !winners.some((p) => staying.has(p.id)),
+      winnerDissolved: dissolved,
       streak: state.championStreak,
     };
-  }, [state.lastMatch, state.championIds, state.championStreak, match]);
+  }, [
+    state.lastMatch,
+    state.championIds,
+    state.championStreak,
+    state.championTeam,
+    match,
+  ]);
 
   const myQueuePos = queue.findIndex((p) => p.id === meId) + 1;
   const amPlaying = onCourt.has(meId);
@@ -206,6 +303,11 @@ export function Lobby({
     try {
       await fn();
       await refresh();
+    } catch (e) {
+      // com a RLS fechada (0014) uma escrita pode ser recusada — e aí a
+      // tela tem que DIZER, não engolir. Sem isso a exceção subia e
+      // derrubava o lobby no meio do jogo.
+      setMsg(e instanceof Error ? e.message : "Não deu pra salvar.");
     } finally {
       setBusy(false);
     }
@@ -217,11 +319,17 @@ export function Lobby({
       navigator.vibrate?.(30);
     });
 
-  const doGenerate = (replaceActive = false) =>
+  /**
+   * `replaceActive` troca a partida que está em quadra; `force` ignora
+   * quem está segurando a quadra e monta os dois times do zero. Entre
+   * partidas os dois são independentes: "nivelar a noite" força sem
+   * substituir nada.
+   */
+  const doGenerate = (replaceActive = false, force = replaceActive) =>
     run(async () => {
       const r = await generateMatch(state, {
         replaceActive,
-        forceReshuffle: replaceActive,
+        forceReshuffle: force,
         nonce: String(Date.now()),
       });
       if (!r.ok) {
@@ -236,8 +344,9 @@ export function Lobby({
 
   const doFinish = (winner: Team, score?: { a: number; b: number }) =>
     run(async () => {
+      // o placar já está no banco desde a 0010; só é gravado como
+      // RESULTADO quando alguém marcou de fato
       const summary = await finishMatch(state, winner, score);
-      if (match) localStorage.removeItem(`placar:${match.id}`);
       setScore(false);
       navigator.vibrate?.(30);
       // a próxima partida não é gravada aqui: primeiro a galera vê
@@ -251,15 +360,18 @@ export function Lobby({
       ?.map((p) => p.name.split(/\s+/)[0])
       .join(", ") ?? "";
 
-  const askFinish = (winner: Team, sc?: { a: number; b: number }) =>
+  const askFinish = (winner: Team, sc?: { a: number; b: number }) => {
+    // partida encerrada é somente leitura (playtest 01 §10)
+    if (!match) return;
     setConfirm({
-      title: `Time ${winner} venceu?`,
+      title: `${teamTitle(winner, teamLabels)} venceu?`,
       body: sc
         ? `Placar ${sc.a}×${sc.b}. Isso encerra a partida, conta o jogo de todo mundo em quadra e mexe na fila.`
         : `${teamNames(winner)}. Isso encerra a partida, conta o jogo de todo mundo em quadra e mexe na fila.`,
-      confirmLabel: `Time ${winner} venceu`,
+      confirmLabel: `${teamName(winner, teamLabels)} venceu`,
       action: () => doFinish(winner, sc),
     });
+  };
 
   const doConfirmNext = () =>
     run(async () => {
@@ -362,12 +474,13 @@ export function Lobby({
     <>
       <Header
         dateLabel={dateLabel(state.date)}
+        peladaName={state.peladaName}
+        onSwitchPelada={() => router.push("/")}
         isOrganizer={org}
         meName={me?.name}
-        onSwitchMe={() => {
-          clearMe();
-          location.reload();
-        }}
+        /* o toque no próprio nome abre a conta: trocar de pessoa, foto,
+           e juntar o histórico. Era só um "trocar" no v1. */
+        onSwitchMe={() => setAccount(true)}
         onOpenEdit={() => setMenu(true)}
         onOpenHistory={() => setHistory(true)}
       />
@@ -383,11 +496,16 @@ export function Lobby({
           <CourtCard
             teamA={match.teamA}
             teamB={match.teamB}
-            championTeam={match.championStays ? "A" : null}
+            championTeam={match.holderTeam}
             streak={match.championStreak}
             meId={meId}
             canFinish={org}
             ranking={ranking}
+            teamLabels={teamLabels}
+            /* só aparece depois que alguém marcou o primeiro ponto —
+               partida sem placar é normal, não é dado faltando */
+            scoreA={scoreStarted ? match.scoreA : null}
+            scoreB={scoreStarted ? match.scoreB : null}
             onWin={askFinish}
             onPlayerTap={
               org
@@ -403,6 +521,7 @@ export function Lobby({
             championIds={state.championIds}
             championStreak={state.championStreak}
             meId={meId}
+            teamLabels={teamLabels}
             canStart={org}
             busy={busy}
             onOpenNext={() => setNextUp({ nonce: String(Date.now()) })}
@@ -416,14 +535,35 @@ export function Lobby({
         )}
 
         {/* pra quem está de fora marcando ponto a ponto — opcional, o
-            "A ganhou / B ganhou" do card continua sendo o caminho curto */}
-        {org && match && (
+            "AZUL ganhou / LARANJA ganhou" do card continua sendo o
+            caminho curto. Aberto pra todo mundo desde a 0010: o placar
+            está no banco, então quem não marca acompanha ao vivo. */}
+        {match && state.settings.scoring && (
           <button
             type="button"
             onClick={() => setScore(true)}
             className="font-display border-border text-ink mx-4 mt-3 flex h-14 w-full max-w-[calc(100%-2rem)] items-center justify-center gap-2 rounded-[12px] border text-base font-bold tracking-widest uppercase"
           >
-            🔢 abrir placar
+            🔢 {org ? "abrir placar" : "ver placar"}
+          </button>
+        )}
+
+        {/* trocar de lado é AÇÃO, nunca efeito colateral de ter ganhado */}
+        {org && match && (
+          <button
+            type="button"
+            onClick={() =>
+              setConfirm({
+                title: "Trocar os times de lado?",
+                body: `${teamName("A", teamLabels)} passa a ser ${teamName("B", teamLabels)} e vice-versa. O placar troca de lado junto.`,
+                confirmLabel: "Trocar de lado",
+                action: () => run(() => swapSides(match.id)),
+              })
+            }
+            disabled={busy}
+            className="font-display text-muted hover:text-ink mx-4 mt-3 block h-12 text-sm tracking-widest uppercase disabled:opacity-40"
+          >
+            ⇄ trocar os times de lado
           </button>
         )}
 
@@ -447,10 +587,12 @@ export function Lobby({
         )}
 
         <Queue
-          players={queue}
+          players={queueView}
           meId={meId}
           ranking={ranking}
           nextUpIds={nextUpIds}
+          nextUp={nextUpPlayers}
+          nextUpExact={nextUpExact}
           onExplain={() => setWhy(true)}
           onPlayerTap={
             org ? (player) => setSheet({ player, context: { where: "queue" } }) : undefined
@@ -519,6 +661,10 @@ export function Lobby({
         <Scoreboard
           matchId={match.id}
           startedAt={match.startedAt}
+          scoreA={match.scoreA}
+          scoreB={match.scoreB}
+          labels={teamLabels}
+          canEdit={org}
           busy={busy}
           onFinish={(winner, s) => askFinish(winner, s)}
           onClose={() => setScore(false)}
@@ -529,19 +675,28 @@ export function Lobby({
         <OrganizerMenu
           status={state.status}
           busy={busy}
-          canRebalance={Boolean(match)}
+          canRebalance
+          hasMatch={Boolean(match)}
           onCheckIns={() => {
             setMenu(false);
             setCheckIns(true);
           }}
+          onSettings={() => {
+            setMenu(false);
+            router.push(`/p/${state.peladaSlug}/admin`);
+          }}
           onRebalance={() => {
             setMenu(false);
             setConfirm({
-              title: "Rebalancear os times?",
-              body: "Os dois times são desfeitos e montados de novo do zero. Quem está segurando a quadra perde a vez de defender.",
-              confirmLabel: "Rebalancear",
+              title: match ? "Rebalancear os times?" : "Nivelar a noite?",
+              body: match
+                ? "Os dois times são desfeitos e montados de novo do zero. Quem está segurando a quadra perde a vez de defender."
+                : "Monta os dois times do zero, priorizando quem está fora há mais tempo. Quem estava segurando a quadra perde a vez de defender.",
+              confirmLabel: match ? "Rebalancear" : "Nivelar",
               tone: "danger",
-              action: () => doGenerate(true),
+              // sem partida em quadra, o mesmo caminho monta a próxima
+              // do zero: é o "parou tudo, monta tudo de novo"
+              action: () => doGenerate(Boolean(match), true),
             });
           }}
           onEndNight={() => {
@@ -565,10 +720,25 @@ export function Lobby({
         />
       )}
 
+      {account && (
+        <AccountSheet
+          me={me}
+          onSwitchMe={() => {
+            clearMe();
+            location.reload();
+          }}
+          onSaved={refresh}
+          onClose={() => setAccount(false)}
+        />
+      )}
+
       {history && (
         <HistorySheet
           sessionId={state.sessionId}
+          peladaId={state.peladaId}
           players={state.players}
+          teamLabels={teamLabels}
+          onStats={() => router.push(`/p/${state.peladaSlug}/stats`)}
           onClose={() => setHistory(false)}
         />
       )}
@@ -610,6 +780,7 @@ export function Lobby({
           teamA={nextUpMatch?.ok ? nextUpMatch.teamA : null}
           teamB={nextUpMatch?.ok ? nextUpMatch.teamB : null}
           missing={nextUpMatch && !nextUpMatch.ok ? nextUpMatch.missing : 0}
+          teamLabels={teamLabels}
           busy={busy}
           onConfirm={doConfirmNext}
           onReshuffle={() => setNextUp({ ...nextUp, nonce: String(Date.now()) })}
@@ -622,14 +793,10 @@ export function Lobby({
           players={state.players}
           onCourtIds={onCourt}
           busy={busy}
-          onCheckIn={async (playerId) => {
-            await checkIn(state.sessionId, playerId);
-            await refresh();
-          }}
-          onUndoCheckIn={async (playerId) => {
-            await undoCheckIn(state.sessionId, playerId);
-            await refresh();
-          }}
+          onCheckIn={(playerId) => run(() => checkIn(state.sessionId, playerId))}
+          onUndoCheckIn={(playerId) =>
+            run(() => undoCheckIn(state.sessionId, playerId))
+          }
           onClose={() => setCheckIns(false)}
         />
       )}
@@ -637,8 +804,8 @@ export function Lobby({
       {askOrg && (
         <OrganizerSheet
           onSuccess={() => {
-            setOrganizer(true);
-            setOrg(true);
+            setOrganizer(true, state.peladaId);
+            setPinOrg(true);
             setAskOrg(false);
             navigator.vibrate?.(30);
           }}

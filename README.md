@@ -24,7 +24,11 @@ e nenhum teste quebrar, o teste está errado.
 Complementos:
 
 - [`RESUMO.md`](./RESUMO.md) — as decisões de produto e o porquê de cada uma
-- [`PRP.md`](./PRP.md) — o plano de implementação
+- [`PRP.md`](./PRP.md) — o plano de implementação do v1
+- [`PLAYTEST-01.md`](./PLAYTEST-01.md) — o que a primeira pelada com o site
+  revelou: o que funcionou, o que quebrou e a causa de cada coisa no código
+- [`PRP-V2.md`](./PRP-V2.md) — o plano a partir dali: multi-pelada, contas com
+  foto, papéis, painéis, placar ao vivo e estatísticas
 
 ## Rodando
 
@@ -47,6 +51,29 @@ Variáveis (`.env.example`):
 As migrations ficam em `supabase/migrations/`. Rode **na ordem**, no SQL Editor
 do Supabase. A tabela com o que cada uma faz está no
 [`reasonable.md`](./reasonable.md#migrations-na-ordem).
+
+⚠️ Da `0012` em diante a ordem importa mais que antes:
+
+1. aplique `0010`–`0013` e a **`0017`** (é ela que tem as funções que o app novo
+   chama pra criar pelada e entrar por código);
+2. habilite **Anonymous sign-ins** no painel do Supabase (Authentication →
+   Providers) — sem isso ninguém sem conta consegue check-in, e criar pelada
+   falha com `new row violates row-level security policy`;
+3. **suba o deploy**;
+4. rode a `0014`, que é a que fecha a RLS de verdade;
+5. confira com **dois aparelhos** que a tela ao vivo continua atualizando
+   (realtime respeita RLS: policy errada não dá erro, só para de atualizar);
+6. aplique `0015` e `0016`.
+
+## Rotas
+
+| URL | O que é |
+|---|---|
+| `/` | suas peladas (manda direto pra última aberta) |
+| `/p/<slug>` | a quadra ao vivo daquela pelada |
+| `/p/<slug>/admin` | membros, papéis e regras |
+| `/p/<slug>/stats` | números da pelada e "eu × alguém" |
+| `/p/<slug>/destaques` | os destaques de cada noite |
 
 ## Testes
 

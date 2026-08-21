@@ -13,11 +13,22 @@ import { Download, Link2, Share2 } from "lucide-react";
  * O botão 1 só aparece quando o aparelho realmente sabe compartilhar
  * arquivo. No desktop quase nunca sabe, então cai no 2 sem drama.
  */
-export function ShareCard({ date, names }: { date: string; names: string[] }) {
+export function ShareCard({
+  date,
+  slug,
+  peladaName,
+  names,
+}: {
+  date: string;
+  /** Os destaques são de uma pelada — o card também. */
+  slug: string;
+  peladaName?: string;
+  names: string[];
+}) {
   const [msg, setMsg] = useState<string | null>(null);
 
-  const imageUrl = `/api/og/${date}`;
-  const texto = `🏆 Destaques do Dia — Vôlei Prainha ZN\n\n${names
+  const imageUrl = `/api/og/${slug}/${date}`;
+  const texto = `🏆 Destaques do Dia${peladaName ? ` — ${peladaName}` : ""}\n\n${names
     .map((n) => `⭐ ${n}`)
     .join("\n")}`;
 
