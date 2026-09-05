@@ -28,6 +28,14 @@ export function useLiveSession(peladaId: string | null) {
   const [state, setState] = useState<LiveState | null>(null);
   const [loading, setLoading] = useState(true);
   const [stale, setStale] = useState(false);
+  /**
+   * A última leitura falhou.
+   *
+   * Sem isto, `state === null` quer dizer duas coisas opostas — "esta
+   * pelada não tem noite aberta" e "não consegui perguntar" — e a tela
+   * tratava as duas como a primeira.
+   */
+  const [failed, setFailed] = useState(false);
   const lastOk = useRef(Date.now());
 
   const refresh = useCallback(async () => {
@@ -37,10 +45,12 @@ export function useLiveSession(peladaId: string | null) {
       setState(next);
       lastOk.current = Date.now();
       setStale(false);
+      setFailed(false);
     } catch {
       // mantém o estado anterior na tela — nunca apaga o que a
       // pessoa está olhando por causa de uma falha de rede
       setStale(Date.now() - lastOk.current > STALE_MS);
+      setFailed(true);
     } finally {
       setLoading(false);
     }
@@ -76,5 +86,5 @@ export function useLiveSession(peladaId: string | null) {
     };
   }, [refresh, peladaId]);
 
-  return { state, loading, stale, refresh };
+  return { state, loading, stale, failed, refresh };
 }

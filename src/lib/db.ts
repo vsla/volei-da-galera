@@ -284,28 +284,51 @@ export async function ensureTodaySession(peladaId: string, date: string) {
 
 // ── O estado ao vivo ─────────────────────────────────────────
 
+/**
+ * O estado ao vivo, ou null quando a pelada REALMENTE não tem noite
+ * aberta.
+ *
+ * Ela LEVANTA em vez de devolver null quando a leitura falha, e a
+ * diferença entre as duas coisas não é preciosismo: quem chama mostra
+ * "ninguém abriu a lista ainda" pro null, com um botão que cria a
+ * sessão de HOJE. Numa rede de praia que caiu, isso criava uma noite
+ * nova por cima de uma noite em andamento — e como a tela sempre pega
+ * a sessão de data mais recente (o `order` logo abaixo), a noite de
+ * verdade sumia da tela inteira, com check-in, partidas e votos.
+ * Ninguém tinha apagado nada; só não dava mais pra chegar lá.
+ */
 export async function fetchState(peladaId: string): Promise<LiveState | null> {
-  const { data: peladas } = await supabase
+  const { data: peladas, error: peladaErr } = await supabase
     .from("peladas")
     .select("*")
     .eq("id", peladaId)
     .limit(1);
+  if (peladaErr) throw new Error(peladaErr.message);
 
   const pelada = (peladas ?? [])[0] as Row | undefined;
   if (!pelada) return null;
 
-  const { data: sessions } = await supabase
+  const { data: sessions, error: sessionErr } = await supabase
     .from("sessions")
     .select("*")
     .eq("pelada_id", peladaId)
     .order("date", { ascending: false })
     .limit(1);
+  if (sessionErr) throw new Error(sessionErr.message);
 
   const session = sessions?.[0] as Row | undefined;
   if (!session) return null;
   const sessionId = session.id as string;
 
-  const [{ data: members }, { data: sps }, { data: matches }] = await Promise.all([
+  // As três também levantam. `sps` é a mais perigosa das leituras desta
+  // função: se ela voltar nula, todo mundo sai daqui com
+  // `checkedInAt: null` e a tela mostra a quadra vazia numa noite cheia
+  // — o mesmo susto de "sumiu tudo", só que por outro caminho.
+  const [
+    { data: members, error: membersErr },
+    { data: sps, error: spsErr },
+    { data: matches, error: matchesErr },
+  ] = await Promise.all([
     supabase
       .from("pelada_members")
       .select("*, players(*)")
@@ -319,6 +342,9 @@ export async function fetchState(peladaId: string): Promise<LiveState | null> {
       .order("round", { ascending: false })
       .limit(6),
   ]);
+
+  const readErr = membersErr ?? spsErr ?? matchesErr;
+  if (readErr) throw new Error(readErr.message);
 
   const byPlayer = new Map(
     (sps ?? []).map((s: Row) => [s.player_id as string, s]),
@@ -937,35 +963,76 @@ export async function myVotes(
     p_session_id: sessionId,
     p_voter_id: voterId,
   });
-  // sem a função no banco vem erro, e erro aqui é "não sei", não
-  // "não votou" — quem chama trata os dois de formas diferentes
-  if (error || !data) return null;
-  return (data as Row[]).map((v) => v.player_id as string);
+  if (!error && data) return (data as Row[]).map((v) => v.player_id as string);
+
+  // A função é da 0019. Ela pode faltar por dois motivos que a tela não
+  // distingue sozinha: a migration não rodou, ou rodou e o cache de
+  // schema do PostgREST ainda não viu (`notify pgrst, 'reload schema'`).
+  // O aviso vai pro console porque quem cuida do banco é quem consegue
+  // agir — o jogador na areia não tem o que fazer com isso.
+  console.warn(
+    "[destaques] highlight_votes_by falhou:",
+    error?.message ?? "sem dados",
+  );
+
+  // Plano B: leitura direta. Só passa por quem reivindicou o jogador com
+  // uma conta, pela `votes_read_own` da 0018 — mas é melhor que nada.
+  const { data: rows, error: tableError } = await supabase
+    .from("highlight_votes")
+    .select("player_id")
+    .eq("session_id", sessionId)
+    .eq("voter_id", voterId);
+
+  if (tableError) {
+    console.warn("[destaques] leitura direta falhou:", tableError.message);
+    return null;
+  }
+
+  // Vazio aqui NÃO é "não votei": com a 0019 fora do ar, a RLS filtra em
+  // silêncio e devolve zero linha do mesmo jeito. Sem as duas leituras
+  // funcionando a resposta honesta é "não sei".
+  const ids = (rows ?? []).map((v: Row) => v.player_id as string);
+  return ids.length ? ids : null;
 }
 
+/**
+ * Grava (ou troca) o voto de alguém.
+ *
+ * Passa pela `cast_highlight_votes` (0020), que apaga o voto anterior e
+ * grava o novo numa transação só. Trocar o voto em duas viagens era
+ * errado de dois jeitos:
+ *
+ *   • o DELETE ia sem conferir o resultado, e RLS que filtra DELETE não
+ *     dá erro — apaga zero linha e devolve 200. O INSERT seguinte
+ *     reinseria um nome que já estava lá e batia na unique da 0001
+ *     (23505), que é o que a galera via ao tentar trocar;
+ *   • se o DELETE passasse e o INSERT falhasse — rede de praia caindo
+ *     no meio — a pessoa ficava SEM VOTO NENHUM.
+ */
 export async function castVotes(
   sessionId: string,
   voterId: string,
   playerIds: string[],
   limit = VOTES_PER_PLAYER,
 ) {
-  await supabase
-    .from("highlight_votes")
-    .delete()
-    .eq("session_id", sessionId)
-    .eq("voter_id", voterId);
+  const ids = playerIds.slice(0, limit).filter((id) => id !== voterId);
 
-  const rows = playerIds
-    .slice(0, limit)
-    // ninguém vota em si mesmo — o banco também barra (`check` na 0001),
-    // mas errar aqui viraria um insert rejeitado no meio da votação
-    .filter((id) => id !== voterId)
-    .map((id) => ({ session_id: sessionId, voter_id: voterId, player_id: id }));
+  const { error } = await supabase.rpc("cast_highlight_votes", {
+    p_session_id: sessionId,
+    p_voter_id: voterId,
+    p_player_ids: ids,
+  });
+  if (!error) return;
 
-  if (rows.length) {
-    const { error } = await supabase.from("highlight_votes").insert(rows);
-    if (error) throw new Error(error.message);
-  }
+  // De propósito não existe plano B em duas viagens aqui. Ele seria o
+  // próprio bug que esta função conserta: apagar o voto antigo e falhar
+  // no insert deixa a pessoa sem voto nenhum. Sem a transação, a coisa
+  // mais segura a fazer é não escrever nada e dizer o que houve — o
+  // voto que já estava lá continua de pé.
+  console.warn("[destaques] cast_highlight_votes falhou:", error.message);
+  throw new Error(
+    `Não deu pra salvar seu voto (${error.message}). Se você já tinha votado, o voto anterior continua valendo.`,
+  );
 }
 
 export type HighlightResult = {

@@ -5,7 +5,13 @@ import { useRouter } from "next/navigation";
 import { useLiveSession } from "@/hooks/useLiveSession";
 import { NamePicker } from "@/components/NamePicker";
 import { Lobby } from "@/components/Lobby";
-import { addGuest, ensureTodaySession, fetchPeladaBySlug, type Pelada } from "@/lib/db";
+import {
+  addGuest,
+  ensureTodaySession,
+  fetchPeladaBySlug,
+  fetchState,
+  type Pelada,
+} from "@/lib/db";
 import { AccountSheet } from "@/components/AccountSheet";
 import { claimPlayer, ensureSession, myPlayerId } from "@/lib/auth";
 import { getMe, setLastPelada, setMe } from "@/lib/identity";
@@ -50,7 +56,9 @@ export function PeladaScreen({ slug }: { slug: string }) {
       .catch(() => setPelada(null));
   }, [slug]);
 
-  const { state, loading, stale, refresh } = useLiveSession(pelada?.id ?? null);
+  const { state, loading, stale, failed, refresh } = useLiveSession(
+    pelada?.id ?? null,
+  );
 
   const openTonight = useCallback(async () => {
     if (!pelada || opening) return;
@@ -58,7 +66,12 @@ export function PeladaScreen({ slug }: { slug: string }) {
     setOpenErr(null);
     try {
       await ensureSession();
-      await ensureTodaySession(pelada.id, today());
+      // relê antes de criar. Se a noite já existe e a tela só não tinha
+      // conseguido carregar, abrir "hoje" criaria uma sessão de data
+      // mais nova que passaria na frente e esconderia a noite em
+      // andamento — check-in, partidas e votos sumiriam da tela.
+      const current = await fetchState(pelada.id);
+      if (!current) await ensureTodaySession(pelada.id, today());
       await refresh();
     } catch (e) {
       setOpenErr(e instanceof Error ? e.message : "Não deu pra abrir a lista.");
@@ -111,6 +124,37 @@ export function PeladaScreen({ slug }: { slug: string }) {
           className="font-display text-accent h-12 text-sm tracking-widest uppercase"
         >
           ver todas as peladas
+        </button>
+      </main>
+    );
+  }
+
+  // não deu pra ler o estado — e isso NÃO é "ninguém abriu a lista".
+  // Confundir as duas coisas é o que fazia a tela oferecer "abrir a
+  // lista de hoje" por cima de uma noite que estava rolando.
+  if (!state && failed) {
+    return (
+      <main className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
+        <span className="text-4xl">🏐</span>
+        <h1 className="font-display text-ink text-2xl font-extrabold tracking-widest uppercase">
+          {pelada.name}
+        </h1>
+        <p className="text-muted">
+          Não deu pra carregar a lista. Pode ser a rede daqui.
+        </p>
+        <button
+          type="button"
+          onClick={() => void refresh()}
+          className="font-display bg-accent text-accent-ink flex h-14 w-full max-w-[320px] items-center justify-center rounded-[12px] text-base font-extrabold tracking-widest uppercase"
+        >
+          tentar de novo
+        </button>
+        <button
+          type="button"
+          onClick={() => router.push("/")}
+          className="font-display text-muted h-12 text-sm tracking-widest uppercase"
+        >
+          ← outras peladas
         </button>
       </main>
     );

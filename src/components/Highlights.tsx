@@ -43,6 +43,8 @@ export function Highlights({
   const [voters, setVoters] = useState<Map<string, number> | null>(null);
   /** A leitura do próprio voto falhou — diferente de "não votei". */
   const [readFailed, setReadFailed] = useState(false);
+  /** Gravar falhou. Some sozinho não: a pessoa precisa saber. */
+  const [saveErr, setSaveErr] = useState<string | null>(null);
 
   /** Quantos cada um escolhe — configuração da pelada. */
   const votesPerPlayer = state.settings.votesPerPlayer;
@@ -116,6 +118,7 @@ export function Highlights({
     // mexeu na seleção, o que está na tela deixou de ser o que está no
     // banco — o botão volta a dizer "votar", não "voto salvo ✓"
     setVoted(false);
+    setSaveErr(null);
     setPicked((cur) =>
       cur.includes(id)
         ? cur.filter((x) => x !== id)
@@ -323,9 +326,17 @@ export function Highlights({
           disabled={busy || picked.length === 0}
           onClick={async () => {
             setBusy(true);
+            setSaveErr(null);
             try {
               await castVotes(state.sessionId, meId, picked, votesPerPlayer);
               setVoted(true);
+              setReadFailed(false);
+            } catch (e) {
+              // sem isto o erro só existia no console: a tela ficava
+              // igualzinha, e a pessoa ia embora achando que votou
+              setSaveErr(
+                e instanceof Error ? e.message : "Não deu pra salvar seu voto.",
+              );
             } finally {
               setBusy(false);
             }
@@ -338,6 +349,12 @@ export function Highlights({
               ? "trocar meu voto"
               : "votar"}
         </button>
+
+        {saveErr && (
+          <p className="bg-live/15 border-live/40 text-ink rounded-[12px] border px-3 py-2.5 text-sm">
+            {saveErr}
+          </p>
+        )}
 
         {isOrganizer && (
           <button
