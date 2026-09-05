@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ensureSession } from "@/lib/auth";
 import { initials } from "@/lib/types";
 import {
   castVotes,
@@ -63,10 +62,9 @@ export function Highlights({
   useEffect(() => {
     let alive = true;
     void (async () => {
-      // a sessão TEM que existir antes da leitura: a policy do voto é
-      // `to authenticated`, e sem JWT o Postgres não recusa — ele
-      // devolve zero linha, que a tela leria como "ainda não votei"
-      await ensureSession();
+      // sem esperar sessão nenhuma: a `highlight_votes_by` (0019) vale
+      // pro anon também, senão quem entra clicando no nome — que é a
+      // maioria — não veria o próprio voto
       const ids = await myVotes(state.sessionId, meId);
       if (!alive) return;
       setReadFailed(ids === null);
@@ -106,9 +104,8 @@ export function Highlights({
   /**
    * O banco diz que você votou, mas a tela não tem as escolhas.
    *
-   * É o bug de 05/09 visto de dentro: sem a policy de select da 0018 o
-   * `myVotes` devolve vazio sem erro nenhum. Enquanto a migration não
-   * roda, é melhor a tela DIZER que não conseguiu recuperar do que
+   * É o bug de 05/09 visto de dentro. Enquanto a 0019 não roda no
+   * banco, é melhor a tela DIZER que não conseguiu recuperar do que
    * mostrar um boletim em branco e deixar a pessoa achar que o voto
    * dela se perdeu — ou votar de novo por engano.
    */

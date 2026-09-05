@@ -26,6 +26,12 @@
 -- valendo o que já estiver de pé. Depois da 0014 ela é um no-op.
 --
 -- ⚠️ PRÉ-REQUISITO: 0013 (é ela que cria `current_player_id()`).
+--
+-- ⚠️ LEIA A 0019 ANTES DE PARAR AQUI. Esta policy só devolve o voto de
+-- quem reivindicou o jogador com uma conta, e a maior parte da galera
+-- entra clicando no nome, sem conta. Sozinha, a 0018 conserta o bug só
+-- pra quem tem login. A 0019 é que faz valer pro convidado — e explica
+-- o que isso custa.
 
 -- ─────────────────────────────────────────────────────────────
 -- Ler o próprio voto — e SÓ o próprio.
@@ -59,7 +65,5 @@ end $$;
 -- Esperado: UMA linha com cmd = 'SELECT', chamada votes_read_own, com
 -- qual = (voter_id = current_player_id()).
 --
--- E, no aparelho: vote, recarregue a tela. Os nomes têm que voltar
--- marcados e o botão tem que dizer "voto salvo ✓". Se voltar em branco
--- com o aviso amarelo, o jogador deste aparelho não foi reivindicado —
--- veja `claimPlayer` em src/lib/auth.ts.
+-- E, no aparelho: com a 0019 aplicada, vote e recarregue a tela. Os
+-- nomes têm que voltar marcados e o botão tem que dizer "voto salvo ✓".

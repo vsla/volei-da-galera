@@ -917,28 +917,30 @@ export async function fetchVoters(
 /**
  * Os seus votos desta sessão — é o que faz a tela reabrir marcada.
  *
+ * Passa pela `highlight_votes_by` (0019), NÃO pela tabela: a RLS não
+ * tem select aberto e nunca vai ter. A função vale pelo mesmo nível de
+ * confiança do "clique no seu nome" (identity.ts) — sem conta, sem
+ * login, que é o que faz o voto caber num toque. O preço está escrito
+ * na 0019: ela acredita no id que o cliente manda.
+ *
  * Devolve null, NÃO uma lista vazia, quando a leitura falha. Mesmo
  * motivo do `fetchVoters` logo acima: vazio seria lido como "ainda não
  * votei", e a tela abriria o boletim em branco pra quem já votou.
  * Aqui isso custa caro, porque `castVotes` APAGA o voto anterior antes
  * de gravar o novo — informação errada aqui perde o voto da pessoa.
- *
- * ⚠️ Vazio ainda é ambíguo por um caminho que o cliente não enxerga: a
- * RLS não dá erro quando filtra, ela devolve zero linha. Sem a policy
- * de select da 0018 o resultado é [] pra todo mundo, com `error` nulo.
- * Quem chama cruza com `fetchVoters` pra desfazer essa ambiguidade.
  */
 export async function myVotes(
   sessionId: string,
   voterId: string,
 ): Promise<string[] | null> {
-  const { data, error } = await supabase
-    .from("highlight_votes")
-    .select("player_id")
-    .eq("session_id", sessionId)
-    .eq("voter_id", voterId);
-  if (error) return null;
-  return (data ?? []).map((v: Row) => v.player_id as string);
+  const { data, error } = await supabase.rpc("highlight_votes_by", {
+    p_session_id: sessionId,
+    p_voter_id: voterId,
+  });
+  // sem a função no banco vem erro, e erro aqui é "não sei", não
+  // "não votou" — quem chama trata os dois de formas diferentes
+  if (error || !data) return null;
+  return (data as Row[]).map((v) => v.player_id as string);
 }
 
 export async function castVotes(
