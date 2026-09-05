@@ -37,11 +37,27 @@ export function PeladaScreen({ slug }: { slug: string }) {
   const [account, setAccount] = useState(false);
 
   useEffect(() => {
-    // sessão (anônima, se não houver conta) antes de qualquer escrita:
-    // desde a 0014 a RLS recusa check-in sem `auth.uid()`
-    void ensureSession();
-    setMeId(getMe());
+    // a tela abre na hora: quem já escolheu o nome não espera rede
+    const stored = getMe();
+    setMeId(stored);
     setReady(true);
+
+    void (async () => {
+      // sessão (anônima, se não houver conta) antes de qualquer escrita:
+      // desde a 0014 a RLS recusa check-in sem `auth.uid()`
+      await ensureSession();
+      if (!stored) return;
+      // reivindica também quem JÁ tinha nome escolhido. O `pick` só roda
+      // na primeira vez, então quem entrou antes da 0013 nunca passou
+      // por ele: o jogador fica sem dono, `current_player_id()` volta
+      // nulo, e aí a escrita é recusada e o próprio voto some da tela.
+      try {
+        setTaken(!(await claimPlayer(stored)));
+      } catch {
+        // sem rede: a tela abre normal e quem avisa é a ação que falhar
+      }
+    })();
+
     fetchPeladaBySlug(slug)
       .then((p) => {
         setPelada(p);

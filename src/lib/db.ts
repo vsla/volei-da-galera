@@ -914,12 +914,30 @@ export async function fetchVoters(
   );
 }
 
-export async function myVotes(sessionId: string, voterId: string): Promise<string[]> {
-  const { data } = await supabase
+/**
+ * Os seus votos desta sessão — é o que faz a tela reabrir marcada.
+ *
+ * Devolve null, NÃO uma lista vazia, quando a leitura falha. Mesmo
+ * motivo do `fetchVoters` logo acima: vazio seria lido como "ainda não
+ * votei", e a tela abriria o boletim em branco pra quem já votou.
+ * Aqui isso custa caro, porque `castVotes` APAGA o voto anterior antes
+ * de gravar o novo — informação errada aqui perde o voto da pessoa.
+ *
+ * ⚠️ Vazio ainda é ambíguo por um caminho que o cliente não enxerga: a
+ * RLS não dá erro quando filtra, ela devolve zero linha. Sem a policy
+ * de select da 0018 o resultado é [] pra todo mundo, com `error` nulo.
+ * Quem chama cruza com `fetchVoters` pra desfazer essa ambiguidade.
+ */
+export async function myVotes(
+  sessionId: string,
+  voterId: string,
+): Promise<string[] | null> {
+  const { data, error } = await supabase
     .from("highlight_votes")
     .select("player_id")
     .eq("session_id", sessionId)
     .eq("voter_id", voterId);
+  if (error) return null;
   return (data ?? []).map((v: Row) => v.player_id as string);
 }
 

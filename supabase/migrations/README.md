@@ -48,6 +48,7 @@ colisão inofensiva em `0002`, porque os dois arquivos são independentes
 | 16 | `0015_stats.sql` | `player_stats`, `head_to_head`, destaques por pelada |
 | 17 | `0016_substitutions.sql` | `joined_mid` / `substituted_for` |
 | 18 | `0017_pelada_join_flow.sql` | `create_pelada`, `join_pelada`, `ensure_player` |
+| 19 | `0018_votes_read_own.sql` | `votes_read_own` — a tela de destaques reabre marcada |
 
 Quase todas são idempotentes (`add column if not exists`, `create or replace
 function`, `drop policy if exists` antes de criar). A exceção que importa é a
@@ -67,8 +68,11 @@ Migration não liga login. Em **Authentication → Sign In / Providers**:
 ## Conferindo o estado
 
 ```sql
--- policies: nenhuma linha com cmd=DELETE em sessions/players,
--- nenhuma com cmd=SELECT em highlight_votes
+-- policies: nenhuma linha com cmd=DELETE em sessions/players.
+-- Em highlight_votes tem que haver UMA linha com cmd=SELECT, a
+-- `votes_read_own` (0014/0018) — é ela que deixa você reler o SEU voto
+-- e só o seu. Zero linha de SELECT ali é o bug de 05/09: a tela de
+-- destaques reabre em branco pra quem já votou.
 select tablename, cmd, policyname
 from pg_policies where schemaname = 'public'
 order by tablename, cmd;
