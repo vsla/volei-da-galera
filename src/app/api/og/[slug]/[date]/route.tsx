@@ -58,6 +58,25 @@ export async function GET(
       : null;
 
   const names = demo ? demo.split(",") : (day?.winners.map((w) => w.name) ?? []);
+
+  /**
+   * Noite com empate mostra mais de três nomes (0021), e esta imagem
+   * tem altura fixa. Então as linhas encolhem conforme a lista cresce,
+   * em vez de a lista ser cortada em três — cortar aqui traria de volta
+   * o desempate arbitrário que a 0021 tirou, justamente na peça que vai
+   * pro grupo.
+   *
+   * O teto de 8 é do desenho, não da regra: acima disso não cabe mesmo,
+   * e a linha "e mais N" pelo menos diz que tem gente faltando. A tela
+   * do app e a página do dia mostram todo mundo.
+   */
+  const MAX_LINHAS = 8;
+  const mostrados = names.slice(0, MAX_LINHAS);
+  const sobraram = names.length - mostrados.length;
+  const apertado = names.length > 3;
+  const nomeSize = apertado ? (names.length > 6 ? 28 : 34) : 46;
+  const estrelaSize = apertado ? 24 : 34;
+  const linhaPad = apertado ? "6px 22px" : "12px 26px";
   const font = await loadFont();
 
   return new ImageResponse(
@@ -129,8 +148,8 @@ export async function GET(
           style={{
             display: "flex",
             flexDirection: "column",
-            gap: 12,
-            marginTop: 26,
+            gap: apertado ? 8 : 12,
+            marginTop: apertado ? 18 : 26,
           }}
         >
           {names.length === 0 && (
@@ -138,7 +157,7 @@ export async function GET(
               Ninguém votou nessa noite.
             </div>
           )}
-          {names.slice(0, 3).map((name) => (
+          {mostrados.map((name) => (
             <div
               key={name}
               style={{
@@ -148,13 +167,13 @@ export async function GET(
                 background: "#131A17",
                 border: "2px solid #2A3833",
                 borderRadius: 18,
-                padding: "12px 26px",
+                padding: linhaPad,
               }}
             >
-              <div style={{ fontSize: 34, display: "flex" }}>⭐</div>
+              <div style={{ fontSize: estrelaSize, display: "flex" }}>⭐</div>
               <div
                 style={{
-                  fontSize: 46,
+                  fontSize: nomeSize,
                   color: "#F2F5F2",
                   letterSpacing: 1,
                   textTransform: "uppercase",
@@ -165,6 +184,11 @@ export async function GET(
               </div>
             </div>
           ))}
+          {sobraram > 0 && (
+            <div style={{ fontSize: 26, color: "#8A9A93", display: "flex" }}>
+              e mais {sobraram} — todos empatados
+            </div>
+          )}
         </div>
 
         <div
