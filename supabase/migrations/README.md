@@ -50,6 +50,8 @@ colisão inofensiva em `0002`, porque os dois arquivos são independentes
 | 18 | `0017_pelada_join_flow.sql` | `create_pelada`, `join_pelada`, `ensure_player` |
 | 19 | `0018_votes_read_own.sql` | `votes_read_own` — a tela de destaques reabre marcada |
 | 20 | `0019_votes_read_no_account.sql` | `highlight_votes_by` — reler o próprio voto sem conta |
+| 21 | `0020_cast_votes_atomic.sql` | `cast_highlight_votes` — trocar o voto numa transação só |
+| 22 | `0021_highlights_ties.sql` | empate na última vaga entra junto, em vez de cair por nome |
 
 Quase todas são idempotentes (`add column if not exists`, `create or replace
 function`, `drop policy if exists` antes de criar). A exceção que importa é a

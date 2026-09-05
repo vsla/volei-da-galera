@@ -1072,9 +1072,25 @@ export async function fetchHighlights(
   );
 
   const byId = new Map(players.map((p) => [p.id, p]));
-  const winners = [...tally.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, top)
+  const sorted = [...tally.entries()].sort((a, b) => b[1] - a[1]);
+
+  /**
+   * O corte é a VOTAÇÃO do terceiro colocado, não a posição três.
+   *
+   * `slice(0, top)` desbancava por ordem de chegada — que na
+   * `highlight_tally` é `votes desc, player_id`, ou seja, por UUID. Em
+   * 04/09 quatro pessoas empataram em 5 votos disputando a terceira
+   * vaga e cada tela escolheu uma: o card mostrou Antonella (ele
+   * desempata por nome), esta aqui mostrou Fernanda.
+   *
+   * Quem empatou entra junto. Desempatar por nome ou por id é o pódio
+   * entrando pela porta dos fundos, e logo abaixo esta função diz que
+   * não tem pódio. Mesma regra da `highlight_days_pelada` (0021) — as
+   * duas precisam concordar, senão o card contradiz o app.
+   */
+  const cutoff = sorted[top - 1]?.[1] ?? 0;
+  const winners = sorted
+    .filter(([, votes]) => votes >= cutoff && votes > 0)
     .map(([id]) => byId.get(id))
     .filter((p): p is SessionPlayer => Boolean(p))
     // ordem alfabética na tela: sem pódio, sem 1º lugar
