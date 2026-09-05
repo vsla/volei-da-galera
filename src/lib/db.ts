@@ -937,10 +937,36 @@ export async function myVotes(
     p_session_id: sessionId,
     p_voter_id: voterId,
   });
-  // sem a função no banco vem erro, e erro aqui é "não sei", não
-  // "não votou" — quem chama trata os dois de formas diferentes
-  if (error || !data) return null;
-  return (data as Row[]).map((v) => v.player_id as string);
+  if (!error && data) return (data as Row[]).map((v) => v.player_id as string);
+
+  // A função é da 0019. Ela pode faltar por dois motivos que a tela não
+  // distingue sozinha: a migration não rodou, ou rodou e o cache de
+  // schema do PostgREST ainda não viu (`notify pgrst, 'reload schema'`).
+  // O aviso vai pro console porque quem cuida do banco é quem consegue
+  // agir — o jogador na areia não tem o que fazer com isso.
+  console.warn(
+    "[destaques] highlight_votes_by falhou:",
+    error?.message ?? "sem dados",
+  );
+
+  // Plano B: leitura direta. Só passa por quem reivindicou o jogador com
+  // uma conta, pela `votes_read_own` da 0018 — mas é melhor que nada.
+  const { data: rows, error: tableError } = await supabase
+    .from("highlight_votes")
+    .select("player_id")
+    .eq("session_id", sessionId)
+    .eq("voter_id", voterId);
+
+  if (tableError) {
+    console.warn("[destaques] leitura direta falhou:", tableError.message);
+    return null;
+  }
+
+  // Vazio aqui NÃO é "não votei": com a 0019 fora do ar, a RLS filtra em
+  // silêncio e devolve zero linha do mesmo jeito. Sem as duas leituras
+  // funcionando a resposta honesta é "não sei".
+  const ids = (rows ?? []).map((v: Row) => v.player_id as string);
+  return ids.length ? ids : null;
 }
 
 export async function castVotes(
