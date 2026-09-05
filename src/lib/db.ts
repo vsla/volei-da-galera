@@ -284,22 +284,37 @@ export async function ensureTodaySession(peladaId: string, date: string) {
 
 // ── O estado ao vivo ─────────────────────────────────────────
 
+/**
+ * O estado ao vivo, ou null quando a pelada REALMENTE não tem noite
+ * aberta.
+ *
+ * Ela LEVANTA em vez de devolver null quando a leitura falha, e a
+ * diferença entre as duas coisas não é preciosismo: quem chama mostra
+ * "ninguém abriu a lista ainda" pro null, com um botão que cria a
+ * sessão de HOJE. Numa rede de praia que caiu, isso criava uma noite
+ * nova por cima de uma noite em andamento — e como a tela sempre pega
+ * a sessão de data mais recente (o `order` logo abaixo), a noite de
+ * verdade sumia da tela inteira, com check-in, partidas e votos.
+ * Ninguém tinha apagado nada; só não dava mais pra chegar lá.
+ */
 export async function fetchState(peladaId: string): Promise<LiveState | null> {
-  const { data: peladas } = await supabase
+  const { data: peladas, error: peladaErr } = await supabase
     .from("peladas")
     .select("*")
     .eq("id", peladaId)
     .limit(1);
+  if (peladaErr) throw new Error(peladaErr.message);
 
   const pelada = (peladas ?? [])[0] as Row | undefined;
   if (!pelada) return null;
 
-  const { data: sessions } = await supabase
+  const { data: sessions, error: sessionErr } = await supabase
     .from("sessions")
     .select("*")
     .eq("pelada_id", peladaId)
     .order("date", { ascending: false })
     .limit(1);
+  if (sessionErr) throw new Error(sessionErr.message);
 
   const session = sessions?.[0] as Row | undefined;
   if (!session) return null;
@@ -969,29 +984,61 @@ export async function myVotes(
   return ids.length ? ids : null;
 }
 
+/**
+ * Grava (ou troca) o voto de alguém.
+ *
+ * Passa pela `cast_highlight_votes` (0020), que apaga o voto anterior e
+ * grava o novo numa transação só. Trocar o voto em duas viagens era
+ * errado de dois jeitos:
+ *
+ *   • o DELETE ia sem conferir o resultado, e RLS que filtra DELETE não
+ *     dá erro — apaga zero linha e devolve 200. O INSERT seguinte
+ *     reinseria um nome que já estava lá e batia na unique da 0001
+ *     (23505), que é o que a galera via ao tentar trocar;
+ *   • se o DELETE passasse e o INSERT falhasse — rede de praia caindo
+ *     no meio — a pessoa ficava SEM VOTO NENHUM.
+ */
 export async function castVotes(
   sessionId: string,
   voterId: string,
   playerIds: string[],
   limit = VOTES_PER_PLAYER,
 ) {
-  await supabase
+  const ids = playerIds.slice(0, limit).filter((id) => id !== voterId);
+
+  const { error } = await supabase.rpc("cast_highlight_votes", {
+    p_session_id: sessionId,
+    p_voter_id: voterId,
+    p_player_ids: ids,
+  });
+  if (!error) return;
+
+  console.warn("[destaques] cast_highlight_votes falhou:", error.message);
+
+  // Plano B, enquanto a 0020 não estiver no banco. Aqui o DELETE é
+  // conferido: falhar alto é melhor que o 23505 sem explicação, e
+  // MUITO melhor que apagar o voto e não conseguir regravar.
+  const { error: delError } = await supabase
     .from("highlight_votes")
     .delete()
     .eq("session_id", sessionId)
     .eq("voter_id", voterId);
-
-  const rows = playerIds
-    .slice(0, limit)
-    // ninguém vota em si mesmo — o banco também barra (`check` na 0001),
-    // mas errar aqui viraria um insert rejeitado no meio da votação
-    .filter((id) => id !== voterId)
-    .map((id) => ({ session_id: sessionId, voter_id: voterId, player_id: id }));
-
-  if (rows.length) {
-    const { error } = await supabase.from("highlight_votes").insert(rows);
-    if (error) throw new Error(error.message);
+  if (delError) {
+    throw new Error(
+      `Não deu pra trocar seu voto (${delError.message}). O voto anterior continua valendo.`,
+    );
   }
+
+  if (!ids.length) return;
+
+  const { error: insError } = await supabase.from("highlight_votes").insert(
+    ids.map((id) => ({
+      session_id: sessionId,
+      voter_id: voterId,
+      player_id: id,
+    })),
+  );
+  if (insError) throw new Error(insError.message);
 }
 
 export type HighlightResult = {
