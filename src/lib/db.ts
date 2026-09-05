@@ -320,7 +320,15 @@ export async function fetchState(peladaId: string): Promise<LiveState | null> {
   if (!session) return null;
   const sessionId = session.id as string;
 
-  const [{ data: members }, { data: sps }, { data: matches }] = await Promise.all([
+  // As três também levantam. `sps` é a mais perigosa das leituras desta
+  // função: se ela voltar nula, todo mundo sai daqui com
+  // `checkedInAt: null` e a tela mostra a quadra vazia numa noite cheia
+  // — o mesmo susto de "sumiu tudo", só que por outro caminho.
+  const [
+    { data: members, error: membersErr },
+    { data: sps, error: spsErr },
+    { data: matches, error: matchesErr },
+  ] = await Promise.all([
     supabase
       .from("pelada_members")
       .select("*, players(*)")
@@ -334,6 +342,9 @@ export async function fetchState(peladaId: string): Promise<LiveState | null> {
       .order("round", { ascending: false })
       .limit(6),
   ]);
+
+  const readErr = membersErr ?? spsErr ?? matchesErr;
+  if (readErr) throw new Error(readErr.message);
 
   const byPlayer = new Map(
     (sps ?? []).map((s: Row) => [s.player_id as string, s]),
@@ -1013,32 +1024,15 @@ export async function castVotes(
   });
   if (!error) return;
 
+  // De propósito não existe plano B em duas viagens aqui. Ele seria o
+  // próprio bug que esta função conserta: apagar o voto antigo e falhar
+  // no insert deixa a pessoa sem voto nenhum. Sem a transação, a coisa
+  // mais segura a fazer é não escrever nada e dizer o que houve — o
+  // voto que já estava lá continua de pé.
   console.warn("[destaques] cast_highlight_votes falhou:", error.message);
-
-  // Plano B, enquanto a 0020 não estiver no banco. Aqui o DELETE é
-  // conferido: falhar alto é melhor que o 23505 sem explicação, e
-  // MUITO melhor que apagar o voto e não conseguir regravar.
-  const { error: delError } = await supabase
-    .from("highlight_votes")
-    .delete()
-    .eq("session_id", sessionId)
-    .eq("voter_id", voterId);
-  if (delError) {
-    throw new Error(
-      `Não deu pra trocar seu voto (${delError.message}). O voto anterior continua valendo.`,
-    );
-  }
-
-  if (!ids.length) return;
-
-  const { error: insError } = await supabase.from("highlight_votes").insert(
-    ids.map((id) => ({
-      session_id: sessionId,
-      voter_id: voterId,
-      player_id: id,
-    })),
+  throw new Error(
+    `Não deu pra salvar seu voto (${error.message}). Se você já tinha votado, o voto anterior continua valendo.`,
   );
-  if (insError) throw new Error(insError.message);
 }
 
 export type HighlightResult = {
