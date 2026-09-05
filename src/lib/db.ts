@@ -914,13 +914,33 @@ export async function fetchVoters(
   );
 }
 
-export async function myVotes(sessionId: string, voterId: string): Promise<string[]> {
-  const { data } = await supabase
-    .from("highlight_votes")
-    .select("player_id")
-    .eq("session_id", sessionId)
-    .eq("voter_id", voterId);
-  return (data ?? []).map((v: Row) => v.player_id as string);
+/**
+ * Os seus votos desta sessão — é o que faz a tela reabrir marcada.
+ *
+ * Passa pela `highlight_votes_by` (0019), NÃO pela tabela: a RLS não
+ * tem select aberto e nunca vai ter. A função vale pelo mesmo nível de
+ * confiança do "clique no seu nome" (identity.ts) — sem conta, sem
+ * login, que é o que faz o voto caber num toque. O preço está escrito
+ * na 0019: ela acredita no id que o cliente manda.
+ *
+ * Devolve null, NÃO uma lista vazia, quando a leitura falha. Mesmo
+ * motivo do `fetchVoters` logo acima: vazio seria lido como "ainda não
+ * votei", e a tela abriria o boletim em branco pra quem já votou.
+ * Aqui isso custa caro, porque `castVotes` APAGA o voto anterior antes
+ * de gravar o novo — informação errada aqui perde o voto da pessoa.
+ */
+export async function myVotes(
+  sessionId: string,
+  voterId: string,
+): Promise<string[] | null> {
+  const { data, error } = await supabase.rpc("highlight_votes_by", {
+    p_session_id: sessionId,
+    p_voter_id: voterId,
+  });
+  // sem a função no banco vem erro, e erro aqui é "não sei", não
+  // "não votou" — quem chama trata os dois de formas diferentes
+  if (error || !data) return null;
+  return (data as Row[]).map((v) => v.player_id as string);
 }
 
 export async function castVotes(

@@ -41,6 +41,8 @@ export function Highlights({
   const [busy, setBusy] = useState(false);
 
   const [voters, setVoters] = useState<Map<string, number> | null>(null);
+  /** A leitura do próprio voto falhou — diferente de "não votei". */
+  const [readFailed, setReadFailed] = useState(false);
 
   /** Quantos cada um escolhe — configuração da pelada. */
   const votesPerPlayer = state.settings.votesPerPlayer;
@@ -58,12 +60,22 @@ export function Highlights({
     : [];
 
   useEffect(() => {
-    myVotes(state.sessionId, meId).then((ids) => {
-      if (ids.length) {
+    let alive = true;
+    void (async () => {
+      // sem esperar sessão nenhuma: a `highlight_votes_by` (0019) vale
+      // pro anon também, senão quem entra clicando no nome — que é a
+      // maioria — não veria o próprio voto
+      const ids = await myVotes(state.sessionId, meId);
+      if (!alive) return;
+      setReadFailed(ids === null);
+      if (ids?.length) {
         setPicked(ids);
         setVoted(true);
       }
-    });
+    })();
+    return () => {
+      alive = false;
+    };
   }, [state.sessionId, meId]);
 
   useEffect(() => {
@@ -71,18 +83,34 @@ export function Highlights({
     fetchHighlights(state.sessionId, state.players).then(setResult);
   }, [state.status, state.sessionId, state.players]);
 
-  // atualiza sozinho enquanto a votação corre: quem cutuca não fica
-  // recarregando a página pra ver se caiu mais um
+  // Todo mundo lê: é por aqui que a tela sabe que VOCÊ já votou mesmo
+  // quando não consegue recuperar em quem. A `highlight_voters` (0009)
+  // devolve só quem votou e quantos votos deu, nunca em quem — então
+  // ler isso no aparelho de qualquer um não conta nada de ninguém.
+  // O painel de "falta votar", esse sim, continua só do organizador.
   useEffect(() => {
-    if (!isOrganizer) return;
     const load = () =>
       fetchVoters(state.sessionId)
         .then((v) => v && setVoters(v))
         .catch(() => {});
     load();
+    // atualiza sozinho enquanto a votação corre: quem cutuca não fica
+    // recarregando a página pra ver se caiu mais um
+    if (!isOrganizer) return;
     const t = setInterval(load, 10000);
     return () => clearInterval(t);
   }, [isOrganizer, state.sessionId, voted]);
+
+  /**
+   * O banco diz que você votou, mas a tela não tem as escolhas.
+   *
+   * É o bug de 05/09 visto de dentro. Enquanto a 0019 não roda no
+   * banco, é melhor a tela DIZER que não conseguiu recuperar do que
+   * mostrar um boletim em branco e deixar a pessoa achar que o voto
+   * dela se perdeu — ou votar de novo por engano.
+   */
+  const iVoted = voters?.has(meId) ?? false;
+  const ballotLost = picked.length === 0 && (iVoted || readFailed);
 
   const toggle = (id: string) => {
     // mexeu na seleção, o que está na tela deixou de ser o que está no
@@ -236,6 +264,23 @@ export function Highlights({
         {picked.length} / {votesPerPlayer}
       </p>
 
+      {ballotLost && (
+        <p className="bg-live/15 border-live/40 text-ink mt-4 rounded-[12px] border px-3 py-2.5 text-sm">
+          {iVoted ? (
+            <>
+              <strong>Seu voto de hoje está salvo</strong> — este aparelho é
+              que não conseguiu recuperar em quem você votou. Pode deixar como
+              está. Se votar de novo, o voto anterior é substituído.
+            </>
+          ) : (
+            <>
+              Não deu pra conferir se você já votou. Se já tiver votado, votar
+              de novo substitui o voto anterior.
+            </>
+          )}
+        </p>
+      )}
+
       {/* quem falta votar — só o organizador, e só QUEM votou, nunca
           em quem (a lista vem da highlight_voters, migration 0009) */}
       {isOrganizer && voters && (
@@ -287,7 +332,11 @@ export function Highlights({
           }}
           className="font-display bg-accent text-accent-ink flex h-14 items-center justify-center rounded-[12px] text-lg font-extrabold tracking-widest uppercase disabled:opacity-40"
         >
-          {voted ? "voto salvo ✓" : "votar"}
+          {voted || (iVoted && picked.length === 0)
+            ? "voto salvo ✓"
+            : iVoted
+              ? "trocar meu voto"
+              : "votar"}
         </button>
 
         {isOrganizer && (
