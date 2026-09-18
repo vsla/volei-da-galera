@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, UserCircle } from "lucide-react";
 import { AccountSheet } from "@/components/AccountSheet";
 import { currentProfile, ensureSession, type Profile } from "@/lib/auth";
-import { joinPeladaByCode } from "@/lib/db";
+import { claimRosterInvite, joinPeladaByCode } from "@/lib/db";
 
 export function InviteJoin({ code }: { code: string }) {
   const router = useRouter();
@@ -25,6 +25,7 @@ export function InviteJoin({ code }: { code: string }) {
   }, []);
 
   const hasAccount = Boolean(profile && !profile.isAnonymous);
+  const personalInvite = code.length > 10;
 
   const join = async (name?: string | null) => {
     if (busy) return;
@@ -32,7 +33,9 @@ export function InviteJoin({ code }: { code: string }) {
     setError(null);
     try {
       await ensureSession();
-      const pelada = await joinPeladaByCode(code, name ?? null);
+      const pelada = personalInvite
+        ? await claimRosterInvite(code)
+        : await joinPeladaByCode(code, name ?? null);
       if (!pelada) {
         setError("Esse convite não existe ou não é mais válido.");
         return;
@@ -71,8 +74,9 @@ export function InviteJoin({ code }: { code: string }) {
             Entrar na pelada
           </h1>
           <p className="text-muted mt-3 text-sm">
-            Você recebeu um convite. Quem já tem conta entra com o próprio
-            histórico; quem veio só hoje pode continuar como convidado.
+            {personalInvite
+              ? "Seu nome já está na lista. Aceite o convite neste aparelho; se você criar uma conta depois, o histórico continua com você."
+              : "Você recebeu um convite. Quem já tem conta entra com o próprio histórico; quem veio só hoje pode continuar como convidado."}
           </p>
         </div>
 
@@ -82,7 +86,33 @@ export function InviteJoin({ code }: { code: string }) {
           </p>
         )}
 
-        {hasAccount ? (
+        {personalInvite ? (
+          <div className="bg-surface border-border rounded-[16px] border p-4">
+            <p className="text-muted text-xs tracking-widest uppercase">
+              convite individual
+            </p>
+            <p className="text-ink mt-2 text-sm">
+              Você já foi colocado no elenco pelo organizador. Não precisa digitar seu nome de novo.
+            </p>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void join()}
+              className="font-display bg-accent text-accent-ink mt-4 h-14 w-full rounded-[12px] text-base font-extrabold tracking-widest uppercase disabled:opacity-40"
+            >
+              {busy ? "entrando…" : "aceitar e entrar"}
+            </button>
+            {!hasAccount && (
+              <button
+                type="button"
+                onClick={() => setAccountOpen(true)}
+                className="font-display text-muted mt-2 h-12 w-full text-sm tracking-widest uppercase"
+              >
+                criar conta antes
+              </button>
+            )}
+          </div>
+        ) : hasAccount ? (
           <div className="bg-surface border-border rounded-[16px] border p-4">
             <p className="text-muted text-xs tracking-widest uppercase">entrando como</p>
             <p className="font-display text-ink mt-1 text-xl font-extrabold tracking-wide uppercase">
