@@ -204,5 +204,10 @@ begin
   return query select v_invite.pelada_id, v_slug, v_target;
 end $$;
 
+revoke all on function is_pelada_admin(uuid) from public, anon;
+revoke all on function admin_add_roster_member(uuid, text, text, text) from public, anon;
+revoke all on function claim_roster_invite(text) from public, anon;
+
+grant execute on function is_pelada_admin(uuid) to authenticated;
 grant execute on function admin_add_roster_member(uuid, text, text, text) to authenticated;
 grant execute on function claim_roster_invite(text) to authenticated;
