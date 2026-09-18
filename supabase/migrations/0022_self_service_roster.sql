@@ -4,6 +4,25 @@
 -- em nome de ninguém. A pessoa pode depois reivindicar aquele convite no
 -- próprio aparelho. Convidado do dia continua existindo separado disso.
 
+-- Este projeto já teve migrations aplicadas manualmente no SQL Editor.
+-- Garante o helper mínimo que este fluxo precisa sem exigir a 0014 inteira.
+create or replace function is_pelada_admin(p_pelada uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $
+  select exists (
+    select 1
+      from pelada_members m
+     where m.pelada_id = p_pelada
+       and m.player_id = current_player_id()
+       and m.status = 'active'
+       and m.role in ('owner', 'admin')
+  );
+$;
+
 create table if not exists pelada_invites (
   id          uuid primary key default gen_random_uuid(),
   pelada_id   uuid not null references peladas(id) on delete cascade,
