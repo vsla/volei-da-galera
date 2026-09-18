@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, Copy } from "lucide-react";
+import { ChevronLeft, Copy, UserPlus } from "lucide-react";
 import {
+  addRosterMember,
   fetchMembers,
   fetchPeladaBySlug,
   removeMember,
@@ -13,7 +14,7 @@ import {
   type Pelada,
   type Role,
 } from "@/lib/db";
-import { ensureSession, myPlayerId } from "@/lib/auth";
+import { ensureSession, myPlayerId, sendRosterInviteEmail } from "@/lib/auth";
 import { getMe } from "@/lib/identity";
 import { DEFAULT_SETTINGS, type PeladaSettings } from "@/lib/settings";
 
@@ -42,6 +43,9 @@ export function AdminPanel({ slug }: { slug: string }) {
   const [tab, setTab] = useState<"membros" | "regras">("membros");
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [newMemberName, setNewMemberName] = useState("");
+  const [newMemberEmail, setNewMemberEmail] = useState("");
+  const [lastInvite, setLastInvite] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const p = await fetchPeladaBySlug(slug);
@@ -141,7 +145,7 @@ export function AdminPanel({ slug }: { slug: string }) {
             <div className={`${row} mb-4 flex items-center gap-3`}>
               <div className="min-w-0 flex-1">
                 <p className="text-muted text-xs tracking-widest uppercase">
-                  código de entrada
+                  convite da pelada
                 </p>
                 <p className="font-display text-ink text-2xl font-extrabold tracking-[0.3em]">
                   {pelada.joinCode}
@@ -151,7 +155,7 @@ export function AdminPanel({ slug }: { slug: string }) {
                 type="button"
                 onClick={() => {
                   void navigator.clipboard?.writeText(
-                    `${window.location.origin}/p/${slug} — código ${pelada.joinCode}`,
+                    `${window.location.origin}/join/${pelada.joinCode}`,
                   );
                   setMsg("Link copiado.");
                 }}
@@ -161,6 +165,101 @@ export function AdminPanel({ slug }: { slug: string }) {
                 <Copy className="size-5" />
               </button>
             </div>
+          )}
+
+          {canEdit && (
+            <form
+              onSubmit={async (event) => {
+                event.preventDefault();
+                if (!pelada || !newMemberName.trim() || busy) return;
+                setBusy(true);
+                setMsg(null);
+                setLastInvite(null);
+                try {
+                  const invite = await addRosterMember({
+                    peladaId: pelada.id,
+                    name: newMemberName,
+                    email: newMemberEmail || null,
+                  });
+                  const url = `${window.location.origin}/join/${invite.token}`;
+                  setLastInvite(url);
+
+                  const email = newMemberEmail.trim();
+                  if (email) {
+                    try {
+                      await sendRosterInviteEmail(email, url);
+                      setMsg("Pessoa adicionada e convite enviado por e-mail.");
+                    } catch {
+                      setMsg("Pessoa adicionada. O e-mail não saiu, mas o link está pronto para copiar.");
+                    }
+                  } else {
+                    setMsg("Pessoa adicionada ao elenco. Agora é só mandar o convite.");
+                  }
+
+                  setNewMemberName("");
+                  setNewMemberEmail("");
+                  await load();
+                } catch (error) {
+                  setMsg(error instanceof Error ? error.message : "Não deu pra adicionar.");
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              className="bg-surface border-border mb-4 rounded-[16px] border p-3"
+            >
+              <div className="mb-3 flex items-center gap-2">
+                <UserPlus className="text-accent size-5" />
+                <div>
+                  <p className="font-display text-ink text-sm font-bold tracking-widest uppercase">
+                    adicionar ao elenco
+                  </p>
+                  <p className="text-muted text-xs">
+                    Cadastre uma vez. A pessoa aparece nas próximas sextas mesmo antes de criar conta.
+                  </p>
+                </div>
+              </div>
+              <input
+                value={newMemberName}
+                onChange={(event) => setNewMemberName(event.target.value)}
+                placeholder="nome"
+                autoComplete="off"
+                className="bg-surface-2 border-border text-ink placeholder:text-muted mb-2 h-12 w-full rounded-[12px] border px-3 outline-none"
+              />
+              <input
+                value={newMemberEmail}
+                onChange={(event) => setNewMemberEmail(event.target.value)}
+                placeholder="e-mail (opcional)"
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                className="bg-surface-2 border-border text-ink placeholder:text-muted mb-2 h-12 w-full rounded-[12px] border px-3 outline-none"
+              />
+              <button
+                type="submit"
+                disabled={busy || !newMemberName.trim()}
+                className="font-display bg-accent text-accent-ink h-12 w-full rounded-[12px] text-sm font-extrabold tracking-widest uppercase disabled:opacity-40"
+              >
+                {busy ? "adicionando…" : "adicionar pessoa"}
+              </button>
+
+              {lastInvite && (
+                <div className="border-border mt-3 flex items-center gap-2 border-t pt-3">
+                  <p className="text-muted min-w-0 flex-1 truncate text-xs">
+                    {lastInvite}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(lastInvite);
+                      setMsg("Convite individual copiado.");
+                    }}
+                    className="font-display text-accent h-10 px-2 text-xs font-bold tracking-widest uppercase"
+                  >
+                    copiar
+                  </button>
+                </div>
+              )}
+            </form>
           )}
 
           <p className="text-muted mb-2 text-sm">

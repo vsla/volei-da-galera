@@ -180,6 +180,42 @@ export async function joinPeladaByCode(
   return row ? { id: row.id as string, slug: row.slug as string } : null;
 }
 
+
+export async function addRosterMember(input: {
+  peladaId: string;
+  name: string;
+  email?: string | null;
+  role?: "admin" | "player";
+}): Promise<{ playerId: string; token: string }> {
+  const { data, error } = await supabase.rpc("admin_add_roster_member", {
+    p_pelada: input.peladaId,
+    p_name: input.name.trim(),
+    p_email: input.email?.trim() || null,
+    p_role: input.role ?? "player",
+  });
+  if (error) throw new Error(friendlyWriteError(error.message));
+  const row = (data as Row[] | null)?.[0];
+  if (!row) throw new Error("Não deu pra adicionar essa pessoa.");
+  return { playerId: row.player_id as string, token: row.token as string };
+}
+
+export async function claimRosterInvite(
+  token: string,
+): Promise<{ id: string; slug: string; playerId: string } | null> {
+  const { data, error } = await supabase.rpc("claim_roster_invite", {
+    p_token: token.trim().toLowerCase(),
+  });
+  if (error) throw new Error(friendlyWriteError(error.message));
+  const row = (data as Row[] | null)?.[0];
+  return row
+    ? {
+        id: row.id as string,
+        slug: row.slug as string,
+        playerId: row.player_id as string,
+      }
+    : null;
+}
+
 /**
  * Traduz o erro cru da RLS pro que a pessoa precisa fazer.
  *

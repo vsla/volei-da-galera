@@ -34,26 +34,49 @@ export function PeladaPicker() {
   /** Tem conta de verdade (não a sessão anônima)? */
   const [account0, setAccount0] = useState(false);
 
+  const loadHome = async () => {
+    await ensureSession();
+
+    let accountPlayerId: string | null = null;
+    try {
+      accountPlayerId = await myPlayerId();
+    } catch {
+      accountPlayerId = null;
+    }
+
+    const localPlayerId = getMe();
+    const identity = accountPlayerId ?? localPlayerId;
+
+    if (accountPlayerId && accountPlayerId !== localPlayerId) {
+      // conta autenticada é a fonte de verdade entre aparelhos
+      setMe(accountPlayerId);
+    }
+
+    setKnown(Boolean(identity));
+
+    try {
+      const profile = await currentProfile();
+      setAccount0(Boolean(profile && !profile.isAnonymous));
+    } catch {
+      setAccount0(false);
+    }
+
+    try {
+      setPeladas(await fetchPeladas(identity));
+    } catch {
+      setPeladas([]);
+    }
+  };
+
   useEffect(() => {
-    // criar pelada e entrar por código são escritas: precisam de sessão
-    void ensureSession();
-    // quem já jogou tem jogador nesta conta (ou neste aparelho) e não
-    // precisa digitar o nome de novo
-    myPlayerId()
-      .then((id) => setKnown(Boolean(id ?? getMe())))
-      .catch(() => setKnown(Boolean(getMe())));
-    currentProfile()
-      .then((p) => setAccount0(Boolean(p && !p.isAnonymous)))
-      .catch(() => setAccount0(false));
-    fetchPeladas(getMe())
-      .then(setPeladas)
-      .catch(() => setPeladas([]));
+    void loadHome();
+    // roda uma vez; loadHome só sincroniza sessão/identidade inicial
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const open = (p: Pelada) => router.push(`/p/${p.slug}`);
 
   const mine = (peladas ?? []).filter((p) => p.myRole);
-  const others = (peladas ?? []).filter((p) => !p.myRole);
 
   const card = (p: Pelada) => (
     <li key={p.id}>
@@ -125,19 +148,13 @@ export function PeladaPicker() {
             </>
           )}
 
-          {others.length > 0 && (
-            <>
-              <h2 className="font-display text-muted mb-2 text-sm tracking-widest uppercase">
-                Outras peladas
-              </h2>
-              <ul className="mb-6 flex flex-col gap-2">{others.map(card)}</ul>
-            </>
-          )}
-
-          {peladas.length === 0 && (
-            <p className="text-muted mb-6 text-center">
-              Nenhuma pelada ainda. Cria a sua.
-            </p>
+          {mine.length === 0 && (
+            <div className="mb-6 text-center">
+              <p className="text-ink font-medium">Você ainda não entrou em nenhuma pelada.</p>
+              <p className="text-muted mt-1 text-sm">
+                Use o link que recebeu do grupo ou entre com o código da pelada.
+              </p>
+            </div>
           )}
         </>
       )}
@@ -306,9 +323,8 @@ export function PeladaPicker() {
 
       {account && (
         <AccountSheet
-          onSaved={() => {
-            setAccount0(true);
-            setKnown(true);
+          onSaved={async () => {
+            await loadHome();
           }}
           onClose={() => setAccount(false)}
         />
