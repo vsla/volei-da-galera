@@ -12,7 +12,7 @@ language sql
 stable
 security definer
 set search_path = public
-as $
+as $fn$
   select exists (
     select 1
       from pelada_members m
@@ -21,7 +21,7 @@ as $
        and m.status = 'active'
        and m.role in ('owner', 'admin')
   );
-$;
+$fn$;
 
 create table if not exists pelada_invites (
   id          uuid primary key default gen_random_uuid(),
