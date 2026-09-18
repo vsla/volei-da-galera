@@ -14,7 +14,7 @@ import {
   type Pelada,
   type Role,
 } from "@/lib/db";
-import { ensureSession, myPlayerId } from "@/lib/auth";
+import { ensureSession, myPlayerId, sendRosterInviteEmail } from "@/lib/auth";
 import { getMe } from "@/lib/identity";
 import { DEFAULT_SETTINGS, type PeladaSettings } from "@/lib/settings";
 
@@ -183,10 +183,22 @@ export function AdminPanel({ slug }: { slug: string }) {
                   });
                   const url = `${window.location.origin}/join/${invite.token}`;
                   setLastInvite(url);
+
+                  const email = newMemberEmail.trim();
+                  if (email) {
+                    try {
+                      await sendRosterInviteEmail(email, url);
+                      setMsg("Pessoa adicionada e convite enviado por e-mail.");
+                    } catch {
+                      setMsg("Pessoa adicionada. O e-mail não saiu, mas o link está pronto para copiar.");
+                    }
+                  } else {
+                    setMsg("Pessoa adicionada ao elenco. Agora é só mandar o convite.");
+                  }
+
                   setNewMemberName("");
                   setNewMemberEmail("");
                   await load();
-                  setMsg("Pessoa adicionada ao elenco. Agora é só mandar o convite.");
                 } catch (error) {
                   setMsg(error instanceof Error ? error.message : "Não deu pra adicionar.");
                 } finally {
