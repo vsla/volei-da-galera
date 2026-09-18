@@ -34,20 +34,44 @@ export function PeladaPicker() {
   /** Tem conta de verdade (não a sessão anônima)? */
   const [account0, setAccount0] = useState(false);
 
+  const loadHome = async () => {
+    await ensureSession();
+
+    let accountPlayerId: string | null = null;
+    try {
+      accountPlayerId = await myPlayerId();
+    } catch {
+      accountPlayerId = null;
+    }
+
+    const localPlayerId = getMe();
+    const identity = accountPlayerId ?? localPlayerId;
+
+    if (accountPlayerId && accountPlayerId !== localPlayerId) {
+      // conta autenticada é a fonte de verdade entre aparelhos
+      setMe(accountPlayerId);
+    }
+
+    setKnown(Boolean(identity));
+
+    try {
+      const profile = await currentProfile();
+      setAccount0(Boolean(profile && !profile.isAnonymous));
+    } catch {
+      setAccount0(false);
+    }
+
+    try {
+      setPeladas(await fetchPeladas(identity));
+    } catch {
+      setPeladas([]);
+    }
+  };
+
   useEffect(() => {
-    // criar pelada e entrar por código são escritas: precisam de sessão
-    void ensureSession();
-    // quem já jogou tem jogador nesta conta (ou neste aparelho) e não
-    // precisa digitar o nome de novo
-    myPlayerId()
-      .then((id) => setKnown(Boolean(id ?? getMe())))
-      .catch(() => setKnown(Boolean(getMe())));
-    currentProfile()
-      .then((p) => setAccount0(Boolean(p && !p.isAnonymous)))
-      .catch(() => setAccount0(false));
-    fetchPeladas(getMe())
-      .then(setPeladas)
-      .catch(() => setPeladas([]));
+    void loadHome();
+    // roda uma vez; loadHome só sincroniza sessão/identidade inicial
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const open = (p: Pelada) => router.push(`/p/${p.slug}`);
@@ -306,9 +330,8 @@ export function PeladaPicker() {
 
       {account && (
         <AccountSheet
-          onSaved={() => {
-            setAccount0(true);
-            setKnown(true);
+          onSaved={async () => {
+            await loadHome();
           }}
           onClose={() => setAccount(false)}
         />
