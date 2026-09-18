@@ -141,7 +141,7 @@ export function AdminPanel({ slug }: { slug: string }) {
             <div className={`${row} mb-4 flex items-center gap-3`}>
               <div className="min-w-0 flex-1">
                 <p className="text-muted text-xs tracking-widest uppercase">
-                  código de entrada
+                  convite da pelada
                 </p>
                 <p className="font-display text-ink text-2xl font-extrabold tracking-[0.3em]">
                   {pelada.joinCode}
@@ -151,7 +151,7 @@ export function AdminPanel({ slug }: { slug: string }) {
                 type="button"
                 onClick={() => {
                   void navigator.clipboard?.writeText(
-                    `${window.location.origin}/p/${slug} — código ${pelada.joinCode}`,
+                    `${window.location.origin}/join/${pelada.joinCode}`,
                   );
                   setMsg("Link copiado.");
                 }}
