@@ -78,6 +78,23 @@ export async function signInWithEmail(email: string, redirectTo: string) {
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Convite por e-mail usa o mesmo magic link da conta.
+ *
+ * O link cai em /join/<token>: a pessoa autentica o e-mail e depois
+ * reivindica o lugar que o organizador já deixou preparado no elenco.
+ */
+export async function sendRosterInviteEmail(email: string, redirectTo: string) {
+  const { error } = await supabase.auth.signInWithOtp({
+    email: email.trim(),
+    options: {
+      emailRedirectTo: redirectTo,
+      shouldCreateUser: true,
+    },
+  });
+  if (error) throw new Error(error.message);
+}
+
 export async function signInWithGoogle(redirectTo: string) {
   const { error } = await supabase.auth.signInWithOAuth({
     provider: "google",
