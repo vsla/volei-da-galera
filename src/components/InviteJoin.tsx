@@ -92,24 +92,32 @@ export function InviteJoin({ code }: { code: string }) {
               convite individual
             </p>
             <p className="text-ink mt-2 text-sm">
-              Você já foi colocado no elenco pelo organizador. Não precisa digitar seu nome de novo.
+              Você já foi colocado no elenco pelo organizador. O cadastro serve
+              para esse mesmo jogador aparecer quando você trocar de aparelho.
             </p>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void join()}
-              className="font-display bg-accent text-accent-ink mt-4 h-14 w-full rounded-[12px] text-base font-extrabold tracking-widest uppercase disabled:opacity-40"
-            >
-              {busy ? "entrando…" : "aceitar e entrar"}
-            </button>
-            {!hasAccount && (
+            {hasAccount ? (
               <button
                 type="button"
-                onClick={() => setAccountOpen(true)}
-                className="font-display text-muted mt-2 h-12 w-full text-sm tracking-widest uppercase"
+                disabled={busy}
+                onClick={() => void join()}
+                className="font-display bg-accent text-accent-ink mt-4 h-14 w-full rounded-[12px] text-base font-extrabold tracking-widest uppercase disabled:opacity-40"
               >
-                criar conta antes
+                {busy ? "entrando…" : "aceitar e entrar"}
               </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setAccountOpen(true)}
+                  className="font-display bg-accent text-accent-ink mt-4 h-14 w-full rounded-[12px] text-base font-extrabold tracking-widest uppercase"
+                >
+                  entrar / criar conta
+                </button>
+                <p className="text-muted mt-2 text-center text-xs">
+                  Convite do elenco é persistente; convidado de uma noite continua
+                  podendo entrar sem conta pelo convite geral da pelada.
+                </p>
+              </>
             )}
           </div>
         ) : hasAccount ? (
