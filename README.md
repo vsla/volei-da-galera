@@ -27,8 +27,9 @@ Complementos:
 - [`PRP.md`](./PRP.md) — o plano de implementação do v1
 - [`PLAYTEST-01.md`](./PLAYTEST-01.md) — o que a primeira pelada com o site
   revelou: o que funcionou, o que quebrou e a causa de cada coisa no código
-- [`PRP-V2.md`](./PRP-V2.md) — o plano a partir dali: multi-pelada, contas com
-  foto, papéis, painéis, placar ao vivo e estatísticas
+- [`PRP-V2.md`](./PRP-V2.md) — o plano a partir dali: multi-pelada, papéis,
+  painéis, placar ao vivo e estatísticas. As contas com foto que ele previa
+  foram desfeitas pela `0022` — veja o cabeçalho dela
 
 ## Rodando
 
@@ -52,18 +53,33 @@ As migrations ficam em `supabase/migrations/`. Rode **na ordem**, no SQL Editor
 do Supabase. A tabela com o que cada uma faz está no
 [`reasonable.md`](./reasonable.md#migrations-na-ordem).
 
-⚠️ Da `0012` em diante a ordem importa mais que antes:
+⚠️ Ordem, da `0012` em diante:
 
-1. aplique `0010`–`0013` e a **`0017`** (é ela que tem as funções que o app novo
-   chama pra criar pelada e entrar por código);
-2. habilite **Anonymous sign-ins** no painel do Supabase (Authentication →
-   Providers) — sem isso ninguém sem conta consegue check-in, e criar pelada
-   falha com `new row violates row-level security policy`;
-3. **suba o deploy**;
-4. rode a `0014`, que é a que fecha a RLS de verdade;
-5. confira com **dois aparelhos** que a tela ao vivo continua atualizando
-   (realtime respeita RLS: policy errada não dá erro, só para de atualizar);
-6. aplique `0015` e `0016`.
+1. aplique `0010`–`0017` na ordem;
+2. aplique `0018`–`0021` — destaques e voto: reler o próprio voto sem conta,
+   trocar o voto numa transação só, empate na última vaga;
+3. rode a **`0022`**, que é a fonte da verdade das policies hoje. Ela desfaz as
+   contas da `0013`/`0014`: identidade volta a ser um toque no nome, guardado no
+   aparelho, e quem tem o link escreve. O motivo está no cabeçalho dela;
+4. rode a **`0023`**, que traz a lista da semana pro painel (`add_member`,
+   `sync_members`). Ela casa nome sem acento pela `unaccent_safe` da `0017`,
+   não pela extensão `unaccent` — então depende da `0017` ter subido;
+5. rode a **`0024`**, que conserta o `join_pelada`: entrar por código
+   estourava `column reference "player_id" is ambiguous`. A correção já
+   estava escrita no arquivo da `0022`, mas o banco tinha a versão anterior
+   — o arquivo foi corrigido depois de aplicado;
+6. rode a **`0025`**, que desengaveta o convite por link (`admin_add_roster_member`,
+   `claim_roster_invite`) — as duas tinham o mesmo defeito da `0024`. Ela também
+   faz a lista da semana poupar quem está `invited`, pra convite pendente não
+   sumir na colagem de sexta;
+7. **passo manual, uma vez por pelada:** quem organiza precisa ter conta E o
+   jogador dele reivindicado, senão `is_pelada_admin()` devolve false e o banco
+   recusa o convite pro dono inclusive;
+8. confira com **dois aparelhos** que a tela ao vivo continua atualizando
+   (realtime respeita RLS: policy errada não dá erro, só para de atualizar).
+
+Não precisa de login nenhum no painel — nem Anonymous sign-ins, nem Google. O
+app não autentica.
 
 ## Rotas
 

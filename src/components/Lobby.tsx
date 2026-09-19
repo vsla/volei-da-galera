@@ -19,7 +19,6 @@ import { PlayerSheet, type PlayerContext } from "./PlayerSheet";
 import { Highlights } from "./Highlights";
 import { OrganizerSheet } from "./OrganizerSheet";
 import { CheckInSheet } from "./CheckInSheet";
-import { AccountSheet } from "./AccountSheet";
 import { generateNextMatch, orderQueue } from "@/lib/match-generator";
 import {
   checkIn,
@@ -42,7 +41,11 @@ import { DEFAULT_TEAM_LABELS, teamName, teamTitle } from "@/lib/teams";
 import type { SessionPlayer, Team } from "@/lib/types";
 
 const dateLabel = (iso: string) =>
-  new Intl.DateTimeFormat("pt-BR", { weekday: "short", day: "numeric", month: "short" })
+  new Intl.DateTimeFormat("pt-BR", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  })
     .format(new Date(`${iso}T12:00:00`))
     .replace(/\./g, "");
 
@@ -70,7 +73,6 @@ export function Lobby({
   const [menu, setMenu] = useState(false);
   const [score, setScore] = useState(false);
   const [history, setHistory] = useState(false);
-  const [account, setAccount] = useState(false);
   /** Confirmação pendente — ver ConfirmSheet. */
   const [confirm, setConfirm] = useState<{
     title: string;
@@ -87,9 +89,10 @@ export function Lobby({
    * com qual seed, pra poder fechar e reabrir sem perder nada.
    */
   const [nextUp, setNextUp] = useState<{ nonce: string } | null>(null);
-  const [sheet, setSheet] = useState<
-    { player: SessionPlayer; context: PlayerContext } | null
-  >(null);
+  const [sheet, setSheet] = useState<{
+    player: SessionPlayer;
+    context: PlayerContext;
+  } | null>(null);
 
   const match = state.activeMatch;
   /** Nome dos times — configuração da pelada; a cor é do tema. */
@@ -112,7 +115,10 @@ export function Lobby({
   /** Alguém está marcando ponto a ponto nesta partida? */
   const scoreStarted = Boolean(match && (match.scoreA > 0 || match.scoreB > 0));
   const onCourt = useMemo(
-    () => new Set([...(match?.teamA ?? []), ...(match?.teamB ?? [])].map((p) => p.id)),
+    () =>
+      new Set(
+        [...(match?.teamA ?? []), ...(match?.teamB ?? [])].map((p) => p.id),
+      ),
     [match],
   );
 
@@ -245,7 +251,9 @@ export function Lobby({
     }
 
     const champions = new Set(state.championIds);
-    const entering = [...r.teamA, ...r.teamB].filter((p) => !champions.has(p.id));
+    const entering = [...r.teamA, ...r.teamB].filter(
+      (p) => !champions.has(p.id),
+    );
     // na ordem da fila, não na ordem dos times: é a fila que a galera confere
     const order = new Map(queue.map((p, i) => [p.id, i]));
     entering.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
@@ -404,7 +412,9 @@ export function Lobby({
       navigator.vibrate?.(30);
     });
 
-  const gone = state.players.filter((p) => p.excluded && p.checkedInAt !== null);
+  const gone = state.players.filter(
+    (p) => p.excluded && p.checkedInAt !== null,
+  );
 
   const closeSheet = () => setSheet(null);
 
@@ -475,12 +485,15 @@ export function Lobby({
       <Header
         dateLabel={dateLabel(state.date)}
         peladaName={state.peladaName}
-        onSwitchPelada={() => router.push("/")}
+        onSwitchPelada={() => router.push("/?escolher=1")}
         isOrganizer={org}
         meName={me?.name}
-        /* o toque no próprio nome abre a conta: trocar de pessoa, foto,
-           e juntar o histórico. Era só um "trocar" no v1. */
-        onSwitchMe={() => setAccount(true)}
+        /* o toque no próprio nome troca de pessoa neste aparelho — sem
+           conta, sem senha, como no v1 */
+        onSwitchMe={() => {
+          clearMe();
+          location.reload();
+        }}
         onOpenEdit={() => setMenu(true)}
         onOpenHistory={() => setHistory(true)}
       />
@@ -509,7 +522,8 @@ export function Lobby({
             onWin={askFinish}
             onPlayerTap={
               org
-                ? (player, team) => setSheet({ player, context: { where: "court", team } })
+                ? (player, team) =>
+                    setSheet({ player, context: { where: "court", team } })
                 : undefined
             }
           />
@@ -555,7 +569,11 @@ export function Lobby({
             onClick={() =>
               setConfirm({
                 title: "Trocar os times de lado?",
-                body: `${teamName("A", teamLabels)} passa a ser ${teamName("B", teamLabels)} e vice-versa. O placar troca de lado junto.`,
+                /* o nome é do LADO, então o lado não troca de nome:
+                   trocam as pessoas, e cada uma leva o placar do seu
+                   time. Dizer "A passa a ser B" descreveria justamente o
+                   renomear que a 0011 matou. */
+                body: `Pra quando a galera trocar de lado de verdade: quem está no ${teamName("A", teamLabels)} passa pro ${teamName("B", teamLabels)} e vice-versa. Cada time leva o placar consigo.`,
                 confirmLabel: "Trocar de lado",
                 action: () => run(() => swapSides(match.id)),
               })
@@ -595,7 +613,9 @@ export function Lobby({
           nextUpExact={nextUpExact}
           onExplain={() => setWhy(true)}
           onPlayerTap={
-            org ? (player) => setSheet({ player, context: { where: "queue" } }) : undefined
+            org
+              ? (player) => setSheet({ player, context: { where: "queue" } })
+              : undefined
           }
         />
 
@@ -609,7 +629,9 @@ export function Lobby({
                 <li key={p.id}>
                   <button
                     type="button"
-                    onClick={() => setSheet({ player: p, context: { where: "gone" } })}
+                    onClick={() =>
+                      setSheet({ player: p, context: { where: "gone" } })
+                    }
                     className="font-display border-border text-muted h-10 rounded-full border px-3 text-sm tracking-wide uppercase"
                   >
                     {p.name}
@@ -720,18 +742,6 @@ export function Lobby({
         />
       )}
 
-      {account && (
-        <AccountSheet
-          me={me}
-          onSwitchMe={() => {
-            clearMe();
-            location.reload();
-          }}
-          onSaved={refresh}
-          onClose={() => setAccount(false)}
-        />
-      )}
-
       {history && (
         <HistorySheet
           sessionId={state.sessionId}
@@ -783,7 +793,9 @@ export function Lobby({
           teamLabels={teamLabels}
           busy={busy}
           onConfirm={doConfirmNext}
-          onReshuffle={() => setNextUp({ ...nextUp, nonce: String(Date.now()) })}
+          onReshuffle={() =>
+            setNextUp({ ...nextUp, nonce: String(Date.now()) })
+          }
           onClose={() => setNextUp(null)}
         />
       )}
@@ -793,7 +805,9 @@ export function Lobby({
           players={state.players}
           onCourtIds={onCourt}
           busy={busy}
-          onCheckIn={(playerId) => run(() => checkIn(state.sessionId, playerId))}
+          onCheckIn={(playerId) =>
+            run(() => checkIn(state.sessionId, playerId))
+          }
           onUndoCheckIn={(playerId) =>
             run(() => undoCheckIn(state.sessionId, playerId))
           }
@@ -816,7 +830,9 @@ export function Lobby({
       {why && (
         <WhySheet
           explanation={preview}
-          teamSize={state.championIds.length ? state.teamSize : state.teamSize * 2}
+          teamSize={
+            state.championIds.length ? state.teamSize : state.teamSize * 2
+          }
           onClose={() => setWhy(false)}
         />
       )}

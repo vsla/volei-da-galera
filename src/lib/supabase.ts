@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { setSupabaseClient } from "../../shared/supabase";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
@@ -10,20 +11,19 @@ if (!url || !key) {
 }
 
 /**
- * A sessão agora PERSISTE (mudou na F4).
+ * Cliente único, sem autenticação.
  *
- * No v1 não havia login, então guardar sessão era peso morto. Com a
- * 0014 a RLS passa a exigir `auth.uid()` pra qualquer escrita — e o
- * convidado, que não tem conta, entra por login anônimo. Perder essa
- * sessão a cada recarga significaria um usuário novo por refresh, e o
- * check-in do celular de alguém pararia de funcionar no meio da noite.
+ * A `0022` desfez as contas: identidade é um toque no nome, guardado no
+ * aparelho (`identity.ts`), e a escrita é liberada pra quem tem o link.
+ * Não há sessão pra persistir nem token pra renovar — o que sobrou de
+ * config é o teto do realtime, pra 25 celulares na praia não afogarem
+ * a conexão em eventos.
  */
 export const supabase = createClient(url, key, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-    flowType: "pkce",
-  },
+  auth: { persistSession: false, autoRefreshToken: false },
   realtime: { params: { eventsPerSecond: 5 } },
 });
+
+// Registra este cliente no `shared/`, que é de onde o `db.ts` fala com o
+// banco. Roda no import, antes de qualquer query — ver `shared/supabase.ts`.
+setSupabaseClient(supabase);

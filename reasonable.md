@@ -457,6 +457,117 @@ transformaria a brincadeira em competição de popularidade (`RESUMO.md`).
 
 ---
 
+## 21. A lista da semana
+
+Toda sexta a lista dos que vão jogar chega pronta no WhatsApp, numerada. Até a
+`0023`, o caminho dela até a tela de check-in era um arquivo `.sql` escrito à
+mão e rodado no SQL Editor do Supabase (`supabase/roster_2026_09_04.sql`,
+`roster_2026_09_11.sql`). Só uma pessoa no grupo conseguia fazer isso, e o
+arquivo começava com `delete from players`.
+
+Agora a lista é colada no painel, aba *membros*.
+
+**Quem não está na lista colada vira `status = 'removed'`, não `delete`.** É a
+decisão que define o resto, e vale explicar a alternativa que foi descartada:
+*só adicionar* mantinha tudo, mas em dois meses a tela de check-in teria 60
+nomes dos quais 15 jogam — deixaria de ser "a lista de hoje", que é a única
+coisa que aquela tela precisa ser às 21h na areia.
+
+`removed` tira da tela e **não apaga nada**: nota (`pelada_members.rating`),
+histórico, partidas e votos ficam inteiros, amarrados ao `player_id`. Voltar é
+colar o nome de novo na semana seguinte — `add_member` reativa em vez de
+recriar, e a nota volta junto. Era exatamente isso que os `.sql` de reset não
+faziam: eles apagavam o jogador, e o auto-nivelamento (§3) recomeçava do zero
+toda sexta.
+
+Três travas em cima disso, porque sincronizar é a única operação do app que
+*tira* gente da tela:
+
+1. **prévia obrigatória.** Colar não grava. A tela mostra *entram*, *ficam* e
+   *saem* e só grava no segundo toque — a regra do §12. Embaixo da coluna
+   *saem* vai a frase que diz que nada foi apagado: sem ela, "saem 12" parece
+   perda de dados, e esse medo é justo (foi o que os `delete` mereceram);
+2. **quem organiza nunca sai.** `owner` e `admin` são imunes, mesmo fora da
+   lista — quem monta a lista às vezes não joga. A trava mora na função do
+   banco (`sync_members`), não na tela: pelada sem organizador é irrecuperável
+   pela tela, e foi a lição da `0017`;
+3. **lista vazia não sincroniza.** Um textarea limpo por engano tiraria a
+   pelada inteira; o banco recusa.
+
+**O parser** (`src/lib/roster-parse.ts`) é puro e testado contra as duas listas
+reais. O que ele tira: a numeração (inclusive o U+2060 que o teclado do iOS
+enfia depois do ponto, e o `1. 1.` de quem colou por cima da própria
+numeração), o cabeçalho (linha sem número **antes** da primeira linha numerada)
+e o `✅`. O `✅` é pix pago, **não presença** — ninguém entra com check-in
+feito, cada um toca "EU CHEGUEI" na praia.
+
+O que ele decide: **nome com parênteses é convidado** — `Guilherme (Lê)`,
+`Mucio (Vitória)`. O anfitrião entre parênteses é a convenção do grupo, e
+continua *dentro* do nome em vez de virar coluna: é assim que procuram na tela,
+e é o que separa dois `Guilherme`.
+
+**Por que não `unique (pelada_id, lower(unaccent(name)))`?** Porque
+`Guilherme (Lê)` e `Guilherme (Ito)` são duas pessoas, e `Thiago` e
+`Ítalo Thiago` também. A comparação sem acento e sem caixa é um *palpite* pra
+não duplicar o Lênin toda semana, não uma regra do domínio — então mora dentro
+de `add_member`, onde a prévia mostra o palpite antes de gravar. Como
+constraint, viraria erro cru na tela no meio da sexta.
+
+---
+
+## 22. Duas telas, um banco — e o vocabulário
+
+**Regra.** A web (`src/`) e o app (`mobile/`) falam com o **mesmo** projeto do
+Supabase. Toda a lógica mora em `shared/`, importada pelos dois: `db.ts`,
+`match-generator.ts`, `rotation.ts`, `settings.ts`, `teams.ts`, `types.ts`,
+`rng.ts`, `roster-parse.ts`.
+
+**Por quê.** Eram duas cópias idênticas, byte a byte. Duas cópias de 47K do
+`db.ts` sem nada obrigando as duas a andarem juntas — e os 81 testes rodavam
+só na da web. A correção do `join_pelada` (`0024`) valia pros dois lados e só
+funcionou porque ainda não tinham divergido.
+
+**O único que NÃO é compartilhado é o cliente do Supabase**, e é legítimo: a
+web não guarda sessão (identidade é um toque no nome, `localStorage`), o app
+guarda no AsyncStorage e renova sozinho. Cada lado cria o seu e registra em
+`shared/supabase.ts`; os atalhos `src/lib/db.ts` e `mobile/lib/db.ts` fazem
+`import "./supabase"` **antes** de reexportar, e é essa ordem que garante o
+cliente registrado na primeira query. Importar `shared/db` direto pula a
+garantia.
+
+**O vocabulário diverge de propósito:**
+
+| no app | na web | no banco |
+| --- | --- | --- |
+| **grupo** | pelada | `peladas` |
+| **pelada** (a noite) | pelada de hoje / sessão | `sessions` |
+
+O app separa os dois porque a separação é mais clara; renomear a web seria
+mexer em `peladas`, em `/p/[slug]` e em 25 componentes por um ganho de palavra.
+
+## 23. Onde a identidade mora (depois das contas voltarem)
+
+**Regra.** Todo mundo **pode** logar, ninguém **precisa**. Convidado nunca.
+
+- a lista da semana cria `players` **sem dono** — ela chega do WhatsApp antes
+  de qualquer conta existir;
+- quem cria conta **reivindica** um nome que já está lá, e só um que ninguém
+  reivindicou (`claim_player`, 0013, `and user_id is null`);
+- quem já reivindicou não reivindica de novo: na semana seguinte o nome volta
+  pela lista, e a conta continua sendo a mesma pessoa;
+- o organizador gera **link pessoal** por membro (`admin_add_roster_member` →
+  `voleidagalera://convite/<token>` → `claim_roster_invite`, 0025). Vale uma vez.
+
+**Por quê o link, se escolher o nome numa lista já reivindica.** Porque escolher
+sozinho é o furo do §9b — "alguém votou a noite inteira como outra pessoa" — e
+agora, com conta, esse engano seria **permanente**, não um `localStorage` que se
+limpa. O link move a autorização pra quem monta a lista.
+
+⚠️ **Isto não é segurança.** As policies continuam `anon, authenticated` pra
+tudo (§9, e a `0022` fez isso de propósito). O login garante **quem você é**,
+não **o que você pode**. Trocar isso é reescrever as policies com `auth.uid()`,
+que é outro projeto e desfaz metade da `0022`.
+
 ## Migrations, na ordem
 
 | Arquivo | O que faz |
@@ -475,10 +586,16 @@ transformaria a brincadeira em competição de popularidade (`RESUMO.md`).
 | `0011_team_sides.sql` | lado do time: `holder_team`, `champion_team`, `swap_sides` |
 | `0012_peladas.sql` | **peladas**, membros, nota por pelada; migra os dados existentes |
 | `0013_auth_profiles.sql` | contas, foto, `claim_player`, `join_as_guest` |
-| `0014_rls_roles.sql` | **fonte da verdade das policies** — papéis de verdade |
+| `0014_rls_roles.sql` | RLS por `auth.uid()` e papéis (superada pela `0022`) |
 | `0015_stats.sql` | `player_stats`, `head_to_head`, destaques por pelada |
 | `0016_substitutions.sql` | `joined_mid` / `substituted_for` |
 | `0017_pelada_join_flow.sql` | `create_pelada`, `join_pelada`, `ensure_player` |
+| `0018_votes_read_own.sql` | `votes_read_own` — a tela de destaques reabre marcada (superada pela `0019`) |
+| `0019_votes_read_no_account.sql` | `highlight_votes_by` — reler o próprio voto sem conta |
+| `0020_cast_votes_atomic.sql` | `cast_highlight_votes` — trocar o voto numa transação só |
+| `0021_highlights_ties.sql` | empate na última vaga entra junto, em vez de cair por nome |
+| `0022_sem_contas.sql` | **fonte da verdade das policies** — fora as contas: RLS aberta como no v1, voto ainda fechado |
+| `0023_lista_no_painel.sql` | `add_member`, `sync_members`, `unaccent` — a lista da semana no painel (§21) |
 
 A ordem de execução, as armadilhas e a configuração do painel do Supabase
 estão em [`supabase/migrations/README.md`](./supabase/migrations/README.md) —

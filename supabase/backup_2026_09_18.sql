@@ -1,0 +1,57 @@
+-- BACKUP ANTES DO ZERAMENTO DE 18/09/2026
+--
+-- O banco foi zerado a pedido ("pode apagar tudo e começar do zero"), e
+-- este arquivo é o que existia de verdade na hora. Não é um dump: é a
+-- única coisa que custava alguma coisa — os nomes.
+--
+-- O que NÃO está aqui porque não existia:
+--   · 0 partidas, 0 check-ins, 0 votos de destaque;
+--   · todas as notas ainda em 5.0 (ninguém tinha jogado pelo app).
+--
+-- Ou seja: o zeramento não custou nota nem histórico. Custou a lista, e
+-- a lista está logo abaixo.
+--
+-- ⚠️ NÃO rode isto pra "restaurar". Ele existe pra consulta. O caminho
+-- certo de recriar a lista é o do v3: colar o bloco do WhatsApp na aba
+-- Gestão do app (ou no painel da web) e deixar a `add_member` trabalhar.
+-- Foi pra acabar com o `.sql` escrito à mão que a `0023` foi escrita.
+
+-- ─────────────────────────────────────────────────────────────
+-- Vôlei da Sexta — Prainha ZN   (slug: prainha-zn)
+-- 16 membros, todos `active`. Lista de 11/09.
+-- ─────────────────────────────────────────────────────────────
+--
+--   owner   Vitor Attar
+--
+--   player  Álvaro Gabriel
+--   player  Arthur Farias
+--   player  Ewerton Eduardo
+--   player  Ítalo Thiago
+--   player  João
+--   player  Lênin Pastichi
+--   player  Miguel
+--   player  Nickole
+--   player  Suzana Rodrigues
+--   player  Talisson Mendes
+--   player  Thiago
+--   player  Victor
+--   player  Vinicius Lamarck
+--
+--   convidado  Anthony (Lê)
+--   convidado  Guilherme (Lê)
+--
+-- O parêntese é a convenção do grupo pra quem convidou — e é o que
+-- separa dois homônimos. Continua no nome, não vira coluna (§3 do
+-- PRP v3).
+
+-- ─────────────────────────────────────────────────────────────
+-- Volei de sexta   (slug: volei-de-sexta)
+-- Grupo de teste, 1 membro.
+-- ─────────────────────────────────────────────────────────────
+--
+--   owner   Victor attar
+
+-- ─────────────────────────────────────────────────────────────
+-- Pra colar de volta no app, o texto original da lista está em
+-- `supabase/roster_2026_09_11.sql`, no cabeçalho dele.
+-- ─────────────────────────────────────────────────────────────

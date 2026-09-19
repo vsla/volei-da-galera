@@ -8,9 +8,10 @@
  * custar mais que um toque. Qualquer um consegue clicar no nome de
  * qualquer um, e entre amigos isso é aceitável.
  *
- * Com contas de verdade (F4) isto vira o caminho do CONVIDADO, não o
- * caminho principal — mas continua existindo, porque é ele que faz o
- * check-in caber em um toque.
+ * A F4 tentou trocar isto por contas de verdade e voltou atrás na
+ * `0022`: o login anônimo que sustentava tudo era um toggle de painel, e
+ * com ele desligado o site inteiro virou somente-leitura sem dizer por
+ * quê. Este arquivo é a identidade inteira do app de novo.
  */
 
 const KEY = "volei.me";

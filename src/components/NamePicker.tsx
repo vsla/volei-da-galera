@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, UserCircle, UserPlus } from "lucide-react";
+import { Search, UserPlus } from "lucide-react";
 import { initials, type SessionPlayer } from "@/lib/types";
 
 export function NamePicker({
@@ -11,10 +11,7 @@ export function NamePicker({
   onPick,
   onAddGuest,
   onBack,
-  onAccount,
 }: {
-  /** Abrir a conta — pra quem já tem e está num aparelho novo. */
-  onAccount?: () => void;
   players: SessionPlayer[];
   /** Configuração da pelada: tem grupo que não quer convidado avulso. */
   allowGuests?: boolean;
@@ -124,23 +121,6 @@ export function NamePicker({
           </button>
         )}
       </div>
-
-      {/*
-        Celular novo, mesma pessoa.
-        Sem esta porta, quem já tinha conta era obrigado a se achar na
-        lista de novo (e podia clicar no nome errado) — a conta existe
-        exatamente pra isso não acontecer.
-      */}
-      {onAccount && (
-        <button
-          type="button"
-          onClick={onAccount}
-          className="font-display text-muted hover:text-ink mt-3 flex h-12 w-full items-center justify-center gap-2 text-sm tracking-widest uppercase"
-        >
-          <UserCircle className="size-4" />
-          já tenho conta — entrar
-        </button>
-      )}
 
       {onBack && (
         <button

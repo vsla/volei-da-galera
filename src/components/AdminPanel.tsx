@@ -13,9 +13,10 @@ import {
   type Pelada,
   type Role,
 } from "@/lib/db";
-import { ensureSession, myPlayerId } from "@/lib/auth";
+import { ListaDaSemana } from "@/components/ListaDaSemana";
 import { getMe } from "@/lib/identity";
 import { DEFAULT_SETTINGS, type PeladaSettings } from "@/lib/settings";
+import { SIDE_SUGGESTIONS } from "@/lib/teams";
 
 /**
  * O PAINEL DA PELADA.
@@ -28,7 +29,11 @@ import { DEFAULT_SETTINGS, type PeladaSettings } from "@/lib/settings";
  */
 const ROLES: { value: Role; label: string; hint: string }[] = [
   { value: "owner", label: "dono", hint: "manda em tudo, transfere a pelada" },
-  { value: "admin", label: "organizador", hint: "monta partida, mexe na noite" },
+  {
+    value: "admin",
+    label: "organizador",
+    hint: "monta partida, mexe na noite",
+  },
   { value: "player", label: "jogador", hint: "check-in, vota, acompanha" },
   { value: "guest", label: "convidado", hint: "veio jogar hoje" },
 ];
@@ -52,8 +57,7 @@ export function AdminPanel({ slug }: { slug: string }) {
   }, [slug]);
 
   useEffect(() => {
-    void ensureSession();
-    myPlayerId().then((id) => setMeId(id ?? getMe()));
+    setMeId(getMe());
     void load();
   }, [load]);
 
@@ -124,7 +128,9 @@ export function AdminPanel({ slug }: { slug: string }) {
             type="button"
             onClick={() => setTab(t)}
             className={`font-display h-12 flex-1 rounded-[12px] text-sm tracking-widest uppercase ${
-              tab === t ? "bg-accent text-accent-ink font-bold" : "bg-surface text-muted"
+              tab === t
+                ? "bg-accent text-accent-ink font-bold"
+                : "bg-surface text-muted"
             }`}
           >
             {t}
@@ -163,6 +169,13 @@ export function AdminPanel({ slug }: { slug: string }) {
             </div>
           )}
 
+          <ListaDaSemana
+            peladaId={pelada.id}
+            members={members}
+            canEdit={canEdit}
+            onChange={load}
+          />
+
           <p className="text-muted mb-2 text-sm">
             {members.length} {members.length === 1 ? "membro" : "membros"}
           </p>
@@ -174,7 +187,9 @@ export function AdminPanel({ slug }: { slug: string }) {
                   <span className="font-display text-ink min-w-0 flex-1 truncate text-base font-semibold tracking-wide uppercase">
                     {m.name}
                     {m.status === "removed" && (
-                      <span className="text-muted ml-2 text-xs">(removido)</span>
+                      <span className="text-muted ml-2 text-xs">
+                        (removido)
+                      </span>
                     )}
                   </span>
                   <span className="tnum text-muted/70 text-sm">
@@ -265,15 +280,18 @@ export function AdminPanel({ slug }: { slug: string }) {
 
           <div className={row}>
             <p className="font-display text-ink text-sm tracking-widest uppercase">
-              Nome dos times
+              De que lado cada time joga
             </p>
             <p className="text-muted mb-2 text-xs">
-              o time não troca de lado — e agora não troca de nome também
+              use o que existe na quadra, não uma cor: quem chega no sorteio
+              precisa saber pra que lado andar sem ter visto a rodada anterior
             </p>
             <div className="flex gap-2">
               {(["A", "B"] as const).map((side) => (
                 <input
-                  key={side}
+                  /* o valor entra por sugestão também, e o input é
+                     não-controlado: a key remonta ele quando muda */
+                  key={`${side}-${settings.teamLabels[side]}`}
                   disabled={!canEdit}
                   defaultValue={settings.teamLabels[side]}
                   onBlur={(e) =>
@@ -291,6 +309,28 @@ export function AdminPanel({ slug }: { slug: string }) {
                 />
               ))}
             </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {SIDE_SUGGESTIONS.map((pair) => {
+                const on =
+                  settings.teamLabels.A === pair.A &&
+                  settings.teamLabels.B === pair.B;
+                return (
+                  <button
+                    key={pair.A}
+                    type="button"
+                    disabled={!canEdit || busy}
+                    onClick={() => save({ ...settings, teamLabels: pair })}
+                    className={`font-display h-9 rounded-full px-3 text-xs tracking-widest uppercase ${
+                      on
+                        ? "bg-accent text-accent-ink font-bold"
+                        : "bg-surface-2 text-muted"
+                    }`}
+                  >
+                    {pair.A} · {pair.B}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <Choice
@@ -299,11 +339,22 @@ export function AdminPanel({ slug }: { slug: string }) {
             value={settings.substitutionMode}
             disabled={!canEdit}
             options={[
-              { value: "titular", label: "vira titular", hint: "conta o jogo e herda a vaga na quadra" },
-              { value: "tapa_buraco", label: "tapa-buraco", hint: "não conta o jogo nem herda a vaga" },
+              {
+                value: "titular",
+                label: "vira titular",
+                hint: "conta o jogo e herda a vaga na quadra",
+              },
+              {
+                value: "tapa_buraco",
+                label: "tapa-buraco",
+                hint: "não conta o jogo nem herda a vaga",
+              },
             ]}
             onChange={(v) =>
-              save({ ...settings, substitutionMode: v as PeladaSettings["substitutionMode"] })
+              save({
+                ...settings,
+                substitutionMode: v as PeladaSettings["substitutionMode"],
+              })
             }
           />
 
@@ -318,7 +369,10 @@ export function AdminPanel({ slug }: { slug: string }) {
               { value: "nobody", label: "ninguém" },
             ]}
             onChange={(v) =>
-              save({ ...settings, showRating: v as PeladaSettings["showRating"] })
+              save({
+                ...settings,
+                showRating: v as PeladaSettings["showRating"],
+              })
             }
           />
 
@@ -332,7 +386,10 @@ export function AdminPanel({ slug }: { slug: string }) {
               { value: "everyone", label: "qualquer um" },
             ]}
             onChange={(v) =>
-              save({ ...settings, whoCanManage: v as PeladaSettings["whoCanManage"] })
+              save({
+                ...settings,
+                whoCanManage: v as PeladaSettings["whoCanManage"],
+              })
             }
           />
 
@@ -384,7 +441,9 @@ function Num({
 }) {
   return (
     <div className="bg-surface border-border rounded-[12px] border px-3 py-3">
-      <p className="font-display text-ink text-sm tracking-widest uppercase">{label}</p>
+      <p className="font-display text-ink text-sm tracking-widest uppercase">
+        {label}
+      </p>
       <p className="text-muted mb-2 text-xs">{hint}</p>
       <div className="flex items-center gap-3">
         <button
@@ -428,7 +487,9 @@ function Choice({
 }) {
   return (
     <div className="bg-surface border-border rounded-[12px] border px-3 py-3">
-      <p className="font-display text-ink text-sm tracking-widest uppercase">{label}</p>
+      <p className="font-display text-ink text-sm tracking-widest uppercase">
+        {label}
+      </p>
       <p className="text-muted mb-2 text-xs">{hint}</p>
       <div className="flex flex-wrap gap-1.5">
         {options.map((o) => (

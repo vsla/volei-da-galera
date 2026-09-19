@@ -56,9 +56,27 @@ export function NextUpSheet({
 
   // quem entra = quem está na prévia e não estava na quadra
   const stayingIds = new Set(summary.staying.map((p) => p.id));
-  const entering = [...(teamA ?? []), ...(teamB ?? [])].filter(
-    (p) => !stayingIds.has(p.id),
-  );
+
+  /**
+   * Quem entra, SEPARADO POR LADO.
+   *
+   * Era uma lista só, e isso deixava a pergunta da areia sem resposta:
+   * seis nomes juntos não dizem pra que lado cada um anda. Numa rodada
+   * nova (campeão desfeito, ou rebalanceada) os dois lados são gente
+   * nova — não existe nem o time que ficou pra usar de referência.
+   *
+   * São dois blocos e não um porque quem entra pode entrar dos dois
+   * lados: o campeão que ficou com menos que um time completo é
+   * preenchido com gente da fila.
+   */
+  const enteringBySide = (["A", "B"] as const)
+    .map((team) => ({
+      team,
+      players: (team === "A" ? (teamA ?? []) : (teamB ?? [])).filter(
+        (p) => !stayingIds.has(p.id),
+      ),
+    }))
+    .filter((side) => side.players.length > 0);
 
   const nameList = (players: SessionPlayer[]) =>
     players.map((p) => labels.get(p.id) ?? p.name).join(" · ");
@@ -122,14 +140,23 @@ export function NextUpSheet({
           </div>
 
           {teamA && teamB ? (
-            <div className="bg-surface-2 rounded-[12px] px-3 py-2.5">
-              <dt className="font-display text-team-b mb-1 text-sm tracking-widest uppercase">
-                Entra
-              </dt>
-              <dd className="font-display text-ink text-base font-semibold tracking-wide uppercase">
-                {entering.length ? nameList(entering) : "—"}
-              </dd>
-            </div>
+            enteringBySide.map(({ team, players }) => (
+              <div
+                key={team}
+                className="bg-surface-2 rounded-[12px] px-3 py-2.5"
+              >
+                <dt
+                  className={`font-display mb-1 text-sm tracking-widest uppercase ${
+                    team === "A" ? "text-team-a" : "text-team-b"
+                  }`}
+                >
+                  Entra no {teamLabels[team]}
+                </dt>
+                <dd className="font-display text-ink text-base font-semibold tracking-wide uppercase">
+                  {nameList(players)}
+                </dd>
+              </div>
+            ))
           ) : (
             <p className="text-muted px-1 py-2 text-sm">
               {missing > 0

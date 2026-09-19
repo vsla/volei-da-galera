@@ -18,6 +18,16 @@ export default function Home() {
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
+    // "?escolher=1" = veio de "← outras peladas" / trocar pelada.
+    // Sem isso, a última aberta engolia o picker e o botão parecia
+    // quebrado (sempre voltava pra Prainha ZN).
+    const wantPicker = new URLSearchParams(window.location.search).has(
+      "escolher",
+    );
+    if (wantPicker) {
+      setChecked(true);
+      return;
+    }
     const last = getLastPelada();
     if (last) router.replace(`/p/${last}`);
     else setChecked(true);

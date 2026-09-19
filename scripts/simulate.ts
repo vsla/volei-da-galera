@@ -7,7 +7,7 @@
 
 import { generateNextMatch } from "../src/lib/match-generator";
 import { applyMatchResult, type Champion } from "../src/lib/rotation";
-import { roster } from "../src/lib/test-helpers";
+import { roster } from "../shared/test-helpers";
 import type { PastMatch } from "../src/lib/types";
 
 const ROUNDS = Number(process.argv[2] ?? 20);

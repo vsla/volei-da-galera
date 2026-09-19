@@ -12,8 +12,6 @@ import {
   fetchState,
   type Pelada,
 } from "@/lib/db";
-import { AccountSheet } from "@/components/AccountSheet";
-import { claimPlayer, ensureSession, myPlayerId } from "@/lib/auth";
 import { getMe, setLastPelada, setMe } from "@/lib/identity";
 
 /** A data de hoje no fuso de quem joga — não no do servidor. */
@@ -37,15 +35,9 @@ export function PeladaScreen({ slug }: { slug: string }) {
   const [meId, setMeId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [opening, setOpening] = useState(false);
-  /** O nome escolhido já é de outro aparelho. */
-  const [taken, setTaken] = useState(false);
   const [openErr, setOpenErr] = useState<string | null>(null);
-  const [account, setAccount] = useState(false);
 
   useEffect(() => {
-    // sessão (anônima, se não houver conta) antes de qualquer escrita:
-    // desde a 0014 a RLS recusa check-in sem `auth.uid()`
-    void ensureSession();
     setMeId(getMe());
     setReady(true);
     fetchPeladaBySlug(slug)
@@ -65,7 +57,6 @@ export function PeladaScreen({ slug }: { slug: string }) {
     setOpening(true);
     setOpenErr(null);
     try {
-      await ensureSession();
       // relê antes de criar. Se a noite já existe e a tela só não tinha
       // conseguido carregar, abrir "hoje" criaria uma sessão de data
       // mais nova que passaria na frente e esconderia a noite em
@@ -81,26 +72,17 @@ export function PeladaScreen({ slug }: { slug: string }) {
   }, [pelada, refresh, opening]);
 
   /**
-   * Clicar no próprio nome AMARRA o jogador a este aparelho.
+   * Clicar no próprio nome é a identidade inteira (v1, e de novo agora).
    *
-   * No v1 a escolha era só localStorage, e "qualquer um consegue clicar
-   * no nome de qualquer um" era aceitável entre amigos. Com a RLS da
-   * 0014 a escrita passa a exigir que você SEJA aquele jogador, então a
-   * escolha reivindica o nome — se ele ainda não tem dono.
-   *
-   * Se já tiver (a pessoa está com o celular dela na mão), a tela avisa:
-   * dá pra acompanhar, mas o check-in é dela. É o conserto de raiz do
-   * "votei a noite inteira como outra pessoa".
+   * A 0013 tentou amarrar o nome ao aparelho que tocasse primeiro, e o
+   * conserto saiu pior que o problema: quem trocava de celular ficava
+   * trancado fora do próprio nome, sem saída pela tela. Entre amigos
+   * numa praia, "qualquer um pode clicar no nome de qualquer um" é
+   * aceitável — e é o que faz o check-in caber em um toque.
    */
-  const pick = async (playerId: string) => {
+  const pick = (playerId: string) => {
     setMe(playerId);
     setMeId(playerId);
-    try {
-      const ok = await claimPlayer(playerId);
-      setTaken(!ok);
-    } catch {
-      setTaken(false);
-    }
   };
 
   if (!ready || pelada === undefined || (pelada && loading)) {
@@ -120,7 +102,7 @@ export function PeladaScreen({ slug }: { slug: string }) {
         </p>
         <button
           type="button"
-          onClick={() => router.push("/")}
+          onClick={() => router.push("/?escolher=1")}
           className="font-display text-accent h-12 text-sm tracking-widest uppercase"
         >
           ver todas as peladas
@@ -151,7 +133,7 @@ export function PeladaScreen({ slug }: { slug: string }) {
         </button>
         <button
           type="button"
-          onClick={() => router.push("/")}
+          onClick={() => router.push("/?escolher=1")}
           className="font-display text-muted h-12 text-sm tracking-widest uppercase"
         >
           ← outras peladas
@@ -177,10 +159,12 @@ export function PeladaScreen({ slug }: { slug: string }) {
         >
           {opening ? "abrindo…" : "abrir a lista de hoje"}
         </button>
-        {openErr && <p className="text-live max-w-[320px] text-sm">{openErr}</p>}
+        {openErr && (
+          <p className="text-live max-w-[320px] text-sm">{openErr}</p>
+        )}
         <button
           type="button"
-          onClick={() => router.push("/")}
+          onClick={() => router.push("/?escolher=1")}
           className="font-display text-muted h-12 text-sm tracking-widest uppercase"
         >
           ← outras peladas
@@ -192,63 +176,23 @@ export function PeladaScreen({ slug }: { slug: string }) {
   // quem já escolheu o nome pula direto pro lobby
   if (!meId || !state.players.some((p) => p.id === meId)) {
     return (
-      <>
-        {account && (
-          <AccountSheet
-            onSaved={async () => {
-              // logou: o jogador da conta pode já estar nesta pelada
-              const mine = await myPlayerId();
-              if (mine) {
-                setMe(mine);
-                setMeId(mine);
-                setAccount(false);
-              }
-              await refresh();
-            }}
-            onClose={() => setAccount(false)}
-          />
-        )}
-        <NamePicker
-          players={state.players}
-          peladaName={state.peladaName}
-          allowGuests={state.settings.allowGuests}
-          onAccount={() => setAccount(true)}
-          onPick={(id) => void pick(id)}
-          onBack={() => router.push("/")}
-          onAddGuest={async (name) => {
-            const id = await addGuest(state.peladaId, name);
-            await refresh();
-            if (id) {
-              setMe(id);
-              setMeId(id);
-            }
-          }}
-        />
-      </>
+      <NamePicker
+        players={state.players}
+        peladaName={state.peladaName}
+        allowGuests={state.settings.allowGuests}
+        onPick={pick}
+        onBack={() => router.push("/?escolher=1")}
+        onAddGuest={async (name) => {
+          const id = await addGuest(state.peladaId, name);
+          await refresh();
+          if (id) {
+            setMe(id);
+            setMeId(id);
+          }
+        }}
+      />
     );
   }
 
-  return (
-    <>
-      {taken && (
-        <div className="bg-live/15 border-live/40 mx-4 mt-3 rounded-[12px] border px-3 py-2.5">
-          <p className="text-ink text-sm">
-            Esse nome já está sendo usado em outro aparelho — aqui você
-            acompanha, mas o check-in e o voto são de lá.{" "}
-            <button
-              type="button"
-              onClick={() => {
-                setTaken(false);
-                setMeId(null);
-              }}
-              className="underline"
-            >
-              escolher outro
-            </button>
-          </p>
-        </div>
-      )}
-      <Lobby state={state} stale={stale} meId={meId} refresh={refresh} />
-    </>
-  );
+  return <Lobby state={state} stale={stale} meId={meId} refresh={refresh} />;
 }

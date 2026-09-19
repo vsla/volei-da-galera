@@ -52,21 +52,47 @@ colisão inofensiva em `0002`, porque os dois arquivos são independentes
 | 20 | `0019_votes_read_no_account.sql` | `highlight_votes_by` — reler o próprio voto sem conta |
 | 21 | `0020_cast_votes_atomic.sql` | `cast_highlight_votes` — trocar o voto numa transação só |
 | 22 | `0021_highlights_ties.sql` | empate na última vaga entra junto, em vez de cair por nome |
+| 23 | `0022_sem_contas.sql` | **nova fonte da verdade das policies** — tira as contas, identidade volta a ser um toque no nome |
+| 24 | `0023_lista_no_painel.sql` | `add_member`, `sync_members`, `unaccent` — a lista da sexta sai do SQL Editor |
+| 25 | `0024_join_pelada_ambiguo.sql` | `join_pelada` deixa de quebrar com `player_id is ambiguous` |
+| 26 | `0025_convite_por_link.sql` | `admin_add_roster_member` + `claim_roster_invite` — o link pessoal do organizador |
+| 27 | `0026_gestao_de_grupo.sql` | **self-service**: `peek_pelada`, `claimable_members`, arquivar, sair, transferir, remover de vez, trocar código, renomear |
 
 Quase todas são idempotentes (`add column if not exists`, `create or replace
 function`, `drop policy if exists` antes de criar). A exceção que importa é a
 `0001`, pelo motivo da armadilha 1.
 
-## Depois de aplicar: o painel do Supabase
+## Depois de aplicar: o painel, de novo
 
-Migration não liga login. Em **Authentication → Sign In / Providers**:
+A `0022` tirou as contas **da web**, e isso continua valendo: o site não tem
+login. Mas o app (`mobile/`) tem, e desde a `0025`/`0026` ele depende de três
+coisas no painel do Supabase. Sem elas o cadastro funciona e a **recuperação de
+senha não** — o e-mail chega com um link morto.
 
-- **Anonymous sign-ins** — obrigatório. A `0014` fechou a escrita por
-  `auth.uid()`, então sem sessão anônima o check-in é recusado.
-- **Google** — Client ID/Secret do Google Cloud Console, com
-  `https://<projeto>.supabase.co/auth/v1/callback` cadastrado como redirect lá.
-- **URL Configuration → Redirect URLs** — `https://volei-da-galera.vercel.app/**`
-  e `http://localhost:3000/**`, senão magic link e Google voltam pro lugar errado.
+**Authentication → URL Configuration → Redirect URLs** precisa conter:
+
+```
+voleidagalera://auth-callback
+voleidagalera://nova-senha
+voleidagalera://convite/*
+voleidagalera://entrar/*
+```
+
+`voleidagalera` é o `scheme` do `mobile/app.json`. Se a URL não estiver
+listada, o Supabase **ignora o `redirectTo` em silêncio** e cai na *Site URL*
+do projeto, que é `http://localhost:3000` — um link que não abre no celular de
+ninguém. É o modo de falha mais caro daqui porque não dá erro nenhum: o e-mail
+é enviado, chega, e o link simplesmente não leva a lugar nenhum.
+
+**Authentication → Providers → Email → Confirm email.** Hoje está **desligado**
+(conta criada já entra), e é o que o fluxo self-service assume. Ligar é
+suportado — `signUpEmail` devolve "precisa confirmar" e a tela de login vira
+uma tela de "confirme seu e-mail" com botão de reenviar —, mas aí o deep link
+acima vira obrigatório de verdade.
+
+**Expo Go não serve pra testar isso.** No Expo Go o `Linking.createURL` gera
+`exp://192.168.x.x:8081/--/...`, e cliente de e-mail não abre esse esquema.
+Recuperação de senha só dá pra testar num build de verdade (`eas build`).
 
 ## Conferindo o estado
 

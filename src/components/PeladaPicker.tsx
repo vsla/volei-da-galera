@@ -2,10 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, UserCircle, Users } from "lucide-react";
-import { AccountSheet } from "./AccountSheet";
-import { createPelada, fetchPeladas, joinPeladaByCode, type Pelada } from "@/lib/db";
-import { currentProfile, ensureSession, myPlayerId } from "@/lib/auth";
+import { Plus, Users } from "lucide-react";
+import {
+  createPelada,
+  fetchPeladas,
+  joinPeladaByCode,
+  playerExists,
+  type Pelada,
+} from "@/lib/db";
 import { getMe, setMe } from "@/lib/identity";
 
 const WEEKDAYS = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
@@ -30,22 +34,17 @@ export function PeladaPicker() {
   const [err, setErr] = useState<string | null>(null);
   /** Já sabemos quem é a pessoa? Se não, ela precisa se apresentar. */
   const [known, setKnown] = useState(false);
-  const [account, setAccount] = useState(false);
-  /** Tem conta de verdade (não a sessão anônima)? */
-  const [account0, setAccount0] = useState(false);
 
   useEffect(() => {
-    // criar pelada e entrar por código são escritas: precisam de sessão
-    void ensureSession();
-    // quem já jogou tem jogador nesta conta (ou neste aparelho) e não
-    // precisa digitar o nome de novo
-    myPlayerId()
-      .then((id) => setKnown(Boolean(id ?? getMe())))
-      .catch(() => setKnown(Boolean(getMe())));
-    currentProfile()
-      .then((p) => setAccount0(Boolean(p && !p.isAnonymous)))
-      .catch(() => setAccount0(false));
-    fetchPeladas(getMe())
+    // quem já jogou tem jogador neste aparelho e não digita o nome de
+    // novo — mas só se aquele jogador ainda existir (um reset da lista
+    // deixa todo celular com um id órfão)
+    const me = getMe();
+    if (me)
+      playerExists(me)
+        .then(setKnown)
+        .catch(() => setKnown(false));
+    fetchPeladas(me)
       .then(setPeladas)
       .catch(() => setPeladas([]));
   }, []);
@@ -74,7 +73,9 @@ export function PeladaPicker() {
               {p.memberCount}
             </span>
             {p.myRole === "owner" || p.myRole === "admin" ? (
-              <span className="text-accent tracking-widest uppercase">organizador</span>
+              <span className="text-accent tracking-widest uppercase">
+                organizador
+              </span>
             ) : null}
           </span>
         </span>
@@ -84,24 +85,6 @@ export function PeladaPicker() {
 
   return (
     <main className="flex flex-1 flex-col overflow-y-auto overscroll-contain px-4 pt-10 pb-6">
-      {/*
-        A conta mora aqui em cima, na home.
-        Ela existia só atrás do próprio nome no header do lobby — ou seja,
-        quem ainda não tinha entrado em pelada nenhuma não tinha como se
-        cadastrar. Feature entregue onde ninguém acha é feature que não
-        foi entregue.
-      */}
-      <div className="mb-4 flex justify-end">
-        <button
-          type="button"
-          onClick={() => setAccount(true)}
-          className="font-display bg-surface border-border text-muted flex h-10 items-center gap-2 rounded-full border px-3 text-xs tracking-widest uppercase"
-        >
-          <UserCircle className="size-4" />
-          {account0 ? "sua conta" : "entrar / criar conta"}
-        </button>
-      </div>
-
       <div className="mb-8 text-center">
         <div className="text-5xl">🏐</div>
         <h1 className="font-display text-ink mt-2 text-3xl font-extrabold tracking-widest uppercase">
@@ -156,18 +139,15 @@ export function PeladaPicker() {
             setBusy(true);
             setErr(null);
             try {
-              // garante a sessão AQUI, não só no carregamento: sem ela a
-              // RLS recusa a criação e o erro é ilegível
-              await ensureSession();
               const p = await createPelada({
                 name: name.trim(),
                 weekday,
                 ownerName: myName.trim() || null,
+                playerId: getMe(),
               });
               // o jogador acabou de nascer no banco: guarda quem você é
               // neste aparelho, senão o lobby pede o nome de novo
-              const mine = await myPlayerId();
-              if (mine) setMe(mine);
+              if (p) setMe(p.playerId);
               if (p) router.push(`/p/${p.slug}`);
               else setErr("Não deu pra criar. Tenta outro nome.");
             } catch (e) {
@@ -238,12 +218,14 @@ export function PeladaPicker() {
             setBusy(true);
             setErr(null);
             try {
-              await ensureSession();
-              const p = await joinPeladaByCode(code, myName.trim() || null);
+              const p = await joinPeladaByCode(
+                code,
+                myName.trim() || null,
+                getMe(),
+              );
               // o jogador acabou de nascer no banco: guarda quem você é
               // neste aparelho, senão o lobby pede o nome de novo
-              const mine = await myPlayerId();
-              if (mine) setMe(mine);
+              if (p) setMe(p.playerId);
               if (p) router.push(`/p/${p.slug}`);
               else setErr("Código não encontrado.");
             } catch (e) {
@@ -302,16 +284,6 @@ export function PeladaPicker() {
             entrar com código
           </button>
         </div>
-      )}
-
-      {account && (
-        <AccountSheet
-          onSaved={() => {
-            setAccount0(true);
-            setKnown(true);
-          }}
-          onClose={() => setAccount(false)}
-        />
       )}
     </main>
   );
